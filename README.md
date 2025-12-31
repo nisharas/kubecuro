@@ -114,7 +114,7 @@ pip install -e .
 
 KubeCuro provides a clear, severity-ranked breakdown of your infrastructure's health:
 
-FINAL PULSE SUMMARY
+FINAL SUMMARY
 | File Name | Severity   | Engine   | Issues Found   | Status       |
 | --- | --- | --- | --- | --- |
 | web.yaml  | 🔴 HIGH    | Synapse  | GHOST          | ❌ Logic Gap |
