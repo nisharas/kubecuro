@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: kubepulse
+Version: 1.0.0
+Summary: A 3-in-1 Heartbeat Monitor for Kubernetes Manifests
+Requires-Dist: ruamel.yaml
