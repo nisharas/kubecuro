@@ -16,17 +16,17 @@ yaml = YAML()
 
 def print_help():
     print("""
-💓 KubePulse: The Heartbeat of your Kubernetes Manifests
+💓 KubeCuro: The Heartbeat of your Kubernetes Manifests
 
 Usage:
-  kubepulse <file_or_directory>
+  kubecuro <file_or_directory>
 
 Options:
   --help     Show this heartbeat menu
 
 Examples:
-  kubepulse pod.yaml          # Heals syntax in one file
-  kubepulse ./k8s-folder      # Heals and syncs all files in a folder
+  kubecuro pod.yaml          # Heals syntax in one file
+  kubecuro ./k8s-folder      # Heals and syncs all files in a folder
     """)
 
 def run():
@@ -39,7 +39,7 @@ def run():
         log.error(f"❌ Path '{target}' not found.")
         return
 
-    log.info(f"💓 KubePulse is checking the pulse of: {target}")
+    log.info(f"💓 KubeCuro is checking the pulse of: {target}")
 
     # Initialize Engines
     syn = Synapse()

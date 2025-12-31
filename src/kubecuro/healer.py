@@ -101,6 +101,6 @@ def linter_engine(file_path):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] in ["-h", "--help"]:
-        print("Usage: kubepulse <filename.yaml>")
+        print("Usage: kubecuro <filename.yaml>")
     else:
         linter_engine(sys.argv[1])

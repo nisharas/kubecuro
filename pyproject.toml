@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kubepulse"
+name = "kubecuro"
 version = "1.0.0"
 description = "A 3-in-1 Heartbeat Monitor for Kubernetes Manifests"
 dependencies = [
@@ -11,4 +11,4 @@ dependencies = [
 ]
 
 [project.scripts]
-kubepulse = "kubepulse.main:run"
+kubecuro = "kubecuro.main:run"

@@ -1,10 +1,10 @@
-## 💓 KubePulse
+## 💓 KubeCuro
 
 [![Kubernetes](https://img.shields.io/badge/kubernetes-%23326ce5.svg?style=flat&logo=kubernetes&logoColor=white)](https://kubernetes.io)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-**KubePulse** is a high-performance, production-grade CLI tool designed to eliminate the "silent killers" of Kubernetes deployments. While standard linters merely validate YAML syntax, KubePulse performs a deep-tissue scan to ensure your infrastructure is **Syntactically Healthy**, **Logically Connected**, and **API Future-Proof**.
+**KubeCuro** is a high-performance, production-grade CLI tool designed to eliminate the "silent killers" of Kubernetes deployments. While standard linters merely validate YAML syntax, KubeCuro performs a deep-tissue scan to ensure your infrastructure is **Syntactically Healthy**, **Logically Connected**, and **API Future-Proof**.
 
 ---
 
@@ -13,7 +13,7 @@
 * **Author:** Nishar A Sunkesala / [FixMyK8s](https://github.com/nisharas)
 * **Version:** 1.0.0
 * **Status:** Stable / Production Ready
-* **Repository:** [https://github.com/nisharas/kubepulse](https://github.com/nisharas/kubepulse)
+* **Repository:** [https://github.com/nisharas/kubecuro](https://github.com/nisharas/kubecuro)
 
 ---
 
@@ -21,7 +21,7 @@
 
 **The Gap:** Current CI/CD pipelines use "Validators" that only check if a YAML file is technically valid. They fail to detect if a Service will actually reach its Pod (due to label/namespace mismatches) or if an API version is deprecated.
 
-**The Solution:** KubePulse closes this feedback loop. It analyzes the **relationships** between files, detecting logical orphans and connection gaps *before* they reach your control plane.
+**The Solution:** KubeCuro closes this feedback loop. It analyzes the **relationships** between files, detecting logical orphans and connection gaps *before* they reach your control plane.
 
 ---
 
@@ -35,7 +35,7 @@
 
 ## 🛡️ Security & Privacy Audit
 
-KubePulse is designed with a "Security-First" architecture, operating as a localized static analysis tool.
+KubeCuro is designed with a "Security-First" architecture, operating as a localized static analysis tool.
 
 * **Zero Data Leakage:** Runs entirely on your local machine. No external network requests or data collection.
 * **Air-Gapped by Design:** Does not communicate with the Kubernetes API Server. No `kubeconfig` or credentials required.
@@ -48,7 +48,7 @@ KubePulse is designed with a "Security-First" architecture, operating as a local
 
 **Scan a Single File**
 ```bash
-kubepulse pod.yaml
+kubecuro pod.yaml
 
 ```
 
@@ -56,14 +56,14 @@ kubepulse pod.yaml
 Cross-references all manifests within the folder to find logical gaps.
 
 ```bash
-kubepulse ./k8s-manifests/
+kubecuro ./k8s-manifests/
 
 ```
 
 **Get Help**
 
 ```bash
-kubepulse --help
+kubecuro --help
 
 ```
 
@@ -77,21 +77,21 @@ Zero dependencies. Download and install directly via terminal:
 
 ```bash
 # Download the latest binary
-curl -L -O https://github.com/nisharas/kubepulse/releases/download/v1.0.0/kubepulse
+curl -L -O https://github.com/nisharas/kubecuro/releases/download/v1.0.0/kubecuro
 
 # Set execution permissions
-chmod +x kubepulse
+chmod +x kubecuro
 
 # Move to your local bin path
-sudo mv kubepulse /usr/local/bin/
+sudo mv kubecuro /usr/local/bin/
 
 ```
 
 ### Option B: From Source (Developers)
 
 ```bash
-git clone https://github.com/nisharas/kubepulse.git
-cd kubepulse
+git clone https://github.com/nisharas/kubecuro.git
+cd kubecuro
 pip install -e .
 
 ```
@@ -112,7 +112,7 @@ pip install -e .
 
 ## 📊 Sample Report
 
-KubePulse provides a clear, severity-ranked breakdown of your infrastructure's health:
+KubeCuro provides a clear, severity-ranked breakdown of your infrastructure's health:
 
 FINAL PULSE SUMMARY
 | File Name | Severity   | Engine   | Issues Found   | Status       |
@@ -133,23 +133,23 @@ FINAL PULSE SUMMARY
 
 ## 💬 Feedback & Contribution
 
-KubePulse is built for the community.
+KubeCuro is built for the community.
 
-* **Found a bug?** Open an [Issue](https://github.com/nisharas/kubepulse/issues).
+* **Found a bug?** Open an [Issue](https://github.com/nisharas/kubecuro/issues).
 
 ## 💖 Support the Project
 
-KubePulse is an open-source project built with the goal of making Kubernetes infrastructure safer and more reliable for everyone. If KubePulse has saved you hours of debugging or prevented a production outage, consider supporting its continued development!
+KubeCuro is an open-source project built with the goal of making Kubernetes infrastructure safer and more reliable for everyone. If KubeCuro has saved you hours of debugging or prevented a production outage, consider supporting its continued development!
 
 ### ☕ Buy Me a Coffee
 If you find this tool helpful, you can support my work by buying me a coffee. Every bit of support helps keep the "Heartbeat" of this project going.
 
 | Scan to Support | Link |
 | :---: | :--- |
-| <img src="https://github.com/nisharas/kubepulse/blob/main/assets/bmc_qr.png?raw=true" width="150"> | [Buy Me a Coffee](https://www.buymeacoffee.com/fixmyk8s) |
+| <img src="https://github.com/nisharas/kubecuro/blob/main/assets/bmc_qr.png?raw=true" width="150"> | [Buy Me a Coffee](https://www.buymeacoffee.com/fixmyk8s) |
 
 ### 🚀 Corporate Sponsorship
-Is your company using KubePulse to secure its delivery pipeline? Please consider a corporate sponsorship to help fund:
+Is your company using KubeCuro to secure its delivery pipeline? Please consider a corporate sponsorship to help fund:
 * Advanced diagnostic engines.
 * Faster release cycles.
 * Dedicated community support.
