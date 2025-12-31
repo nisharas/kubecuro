@@ -9,10 +9,10 @@ PURPOSE:        The Main Entry Point for KubeCuro. Orchestrates the Healer,
 import sys
 import os
 from tabulate import tabulate
-from .healer import linter_engine
-from .synapse import Synapse
-from .shield import Shield
-from .logger import get_logger
+from healer import linter_engine
+from synapse import Synapse
+from shield import Shield
+from logger import get_logger
 
 try:
     from ruamel.yaml import YAML
