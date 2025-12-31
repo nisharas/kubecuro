@@ -115,6 +115,25 @@ pip install -e .
 KubePulse is built for the community.
 
 * **Found a bug?** Open an [Issue](https://github.com/nisharas/kubepulse/issues).
+
+* ## 💖 Support the Project
+
+KubePulse is an open-source project built with the goal of making Kubernetes infrastructure safer and more reliable for everyone. If KubePulse has saved you hours of debugging or prevented a production outage, consider supporting its continued development!
+
+### ☕ Buy Me a Coffee
+If you find this tool helpful, you can support my work by buying me a coffee. Every bit of support helps keep the "Heartbeat" of this project going.
+
+| Scan to Support | Link |
+| :---: | :--- |
+| <img src="https://github.com/nisharas/kubepulse/blob/main/assets/bmc_qr.png?raw=true" width="150"> | [Buy Me a Coffee](https://www.buymeacoffee.com/fixmyk8s) |
+
+### 🚀 Corporate Sponsorship
+Is your company using KubePulse to secure its delivery pipeline? Please consider a corporate sponsorship to help fund:
+* Advanced diagnostic engines.
+* Faster release cycles.
+* Dedicated community support.
+
+Reach out to me at **fixmyk8s@protonmail.com** for formal sponsorship inquiries.
 * **Have a feature idea?** Email me at **fixmyk8s@protonmail.com**
 
 **Built with ❤️ by Nishar A Sunkesala / [FixMyK8s](https://github.com/nisharas).**
