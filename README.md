@@ -116,7 +116,7 @@ KubePulse is built for the community.
 
 * **Found a bug?** Open an [Issue](https://github.com/nisharas/kubepulse/issues).
 
-* ## 💖 Support the Project
+## 💖 Support the Project
 
 KubePulse is an open-source project built with the goal of making Kubernetes infrastructure safer and more reliable for everyone. If KubePulse has saved you hours of debugging or prevented a production outage, consider supporting its continued development!
 
