@@ -83,6 +83,7 @@ def linter_engine(file_path):
         
         if not diff:
             print("✔ Manifest is already healthy. No changes required.")
+	    return False
         else:
             for line in diff:
                 if line.startswith('+') and not line.startswith('+++'):
@@ -95,12 +96,15 @@ def linter_engine(file_path):
             
             print("=" * 60)
             print(f"SUCCESS: Configuration file '{file_path}' has been healed.")
+	    return True
 
     except Exception as e:
         print(f"\n[CRITICAL ERROR] Auto-heal failed: {e}")
+	return False
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] in ["-h", "--help"]:
         print("Usage: kubecuro <filename.yaml>")
     else:
         linter_engine(sys.argv[1])
+
