@@ -71,3 +71,4 @@ Kubecuro is not just a linter; it is a **Cross-Manifest Logic Engine**. It bridg
 If you have encountered a production issue caused by a "Logic Gap" that Kubecuro didn't catch, please [Open an Issue](https://github.com/nisharas/kubecuro/issues) with the tag `[Logic Gap]`.
 
 ---
+*Built with ❤️ by Nishar A Sunkesala and the Kubecuro Community | Powered by FixMyK8s*
