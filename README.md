@@ -185,6 +185,6 @@ Is your company using KubeCuro to secure its delivery pipeline? Please consider 
 Reach out to me at **fixmyk8s@protonmail.com** for formal sponsorship inquiries.
 * **Have a feature idea?** Email me at **fixmyk8s@protonmail.com**
 
-**Built with ❤️ by Nishar A Sunkesala / [FixMyK8s](https://github.com/nisharas).**
+**Built with ❤️ by Nishar A Sunkesala and the Kubecuro Community | Powered by FixMyK8s**
 
 
