@@ -10,5 +10,11 @@ dependencies = [
     "ruamel.yaml",
 ]
 
+dependencies = [
+    "ruamel.yaml>=0.17.0",
+    "rich>=12.0.0",
+    "tabulate>=0.8.1",
+]
+
 [project.scripts]
 kubecuro = "kubecuro.main:run"
