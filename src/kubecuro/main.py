@@ -1,7 +1,7 @@
 """
 --------------------------------------------------------------------------------
-AUTHOR:         Nishar A Sunkesala / FixMyK8s
-PURPOSE:        Main Entry Point for KubeCuro with Rich UI.
+AUTHOR:      Nishar A Sunkesala / FixMyK8s
+PURPOSE:     Main Entry Point for KubeCuro with Rich UI (Static x86_64).
 --------------------------------------------------------------------------------
 """
 import sys
@@ -12,7 +12,6 @@ from typing import List
 
 # UI and Logging Imports
 from rich.console import Console
-# Table and Panel are imported but handled within the main logic
 from rich.table import Table
 from rich.panel import Panel
 from rich.logging import RichHandler
@@ -33,39 +32,68 @@ logging.basicConfig(
 log = logging.getLogger("rich")
 console = Console()
 
+def show_help():
+    """Displays a professional, formatted help menu."""
+    help_console = Console()
+    
+    # Header
+    help_console.print(Panel("[bold green]❤️ KubeCuro[/bold green] | Kubernetes Logic Diagnostics & YAML Healer", expand=False))
+    
+    # Usage Section
+    help_console.print("\n[bold yellow]Usage:[/bold yellow]")
+    help_console.print("  kubecuro [file_or_dir] [flags]")
+    
+    # Commands/Arguments Table
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_row("[bold cyan]Arguments:[/bold cyan]", "")
+    table.add_row("  file_or_dir", "Path to a K8s manifest or directory containing YAMLs")
+    
+    # Options Section
+    table.add_row("\n[bold cyan]Options:[/bold cyan]", "")
+    table.add_row("  -h, --help", "Show this help message and exit")
+    table.add_row("  -v, --version", "Print version information and architecture")
+    table.add_row("  --fix", "Automatically attempt to repair detected logic errors")
+    table.add_row("  --dry-run", "Show what would be fixed without modifying files")
+    
+    # Examples Section
+    help_console.print(table)
+    help_console.print("\n[bold yellow]Examples:[/bold yellow]")
+    help_console.print("  [dim]# Scan a specific deployment[/dim]")
+    help_console.print("  kubecuro deployment.yaml")
+    help_console.print("  [dim]# Scan and fix an entire namespace folder[/dim]")
+    help_console.print("  kubecuro ./manifests/ --fix")
+    
+    help_console.print("\n[italic grey]Built for x86_64 Linux (Static Binary)[/italic grey]")
+
 def run():
     """Main execution loop for KubeCuro."""
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("target", nargs="?", help="File or directory to scan")
     parser.add_argument("-h", "--help", action="store_true")
     parser.add_argument("-v", "--version", action="store_true")
+    parser.add_argument("--fix", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
     
     args = parser.parse_args()
 
-    # Handle Help Menu
+    # 1. Handle Help Menu
     if args.help or (not args.target and not args.version):
-        console.print(Panel.fit(
-            "❤️ [bold magenta]KubeCuro[/bold magenta] | Kubernetes Logic Diagnostics\n\n"
-            "[bold cyan]Usage:[/bold cyan] kubecuro <file_or_directory>\n\n"
-            "[bold yellow]Options:[/bold yellow]\n"
-            "  -h, --help      Show this menu\n"
-            "  -v, --version   Show version info",
-            title="Help", border_style="blue"
-        ))
+        show_help()
         return
 
-    # Handle Version
+    # 2. Handle Version
     if args.version:
         console.print("[bold magenta]KubeCuro Version:[/bold magenta] 1.0.0")
+        console.print("[dim]Architecture: x86_64 Linux (Static Binary)[/dim]")
         return
 
-    # Validate Path
+    # 3. Validate Path
     target = args.target
     if not os.path.exists(target):
         log.error(f"Path '{target}' not found.")
         sys.exit(1)
 
-    # Header Panel
+    # Header Panel for Execution
     console.print(Panel("❤️ [bold white]KubeCuro: Kubernetes Logic Diagnostics[/bold white]", style="bold magenta"))
     
     syn = Synapse()
@@ -89,7 +117,6 @@ def run():
             
             # 1. Healer (Syntax Audit)
             try:
-                # linter_engine should also use pure=True internally in healer.py
                 if linter_engine(f):
                     all_issues.append(AuditIssue(
                         engine="Healer", code="SYNTAX", severity="🟡 LOW", 
@@ -139,7 +166,6 @@ def run():
         console.print(table)
 
     # --- PHASE 4: Remediation Guide ---
-    # Only show remediation for MED/HIGH issues to keep output clean
     critical_issues = [i for i in all_issues if i.severity != "🟡 LOW"]
     if critical_issues:
         console.print("\n[bold green]💡 FIXMYK8S REMEDIATION GUIDE:[/bold green]")
