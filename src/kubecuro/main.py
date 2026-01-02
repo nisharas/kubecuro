@@ -12,9 +12,11 @@ from rich.panel import Panel
 from rich.logging import RichHandler
 import logging
 
-from healer import linter_engine
-from synapse import Synapse, AuditIssue
-from shield import Shield
+from .healer import linter_engine
+from .synapse import Synapse
+from .shield import Shield
+from .models import AuditIssue  
+from .utils.logger import get_logger Shield
 
 # Setup Rich Logging
 logging.basicConfig(level="INFO", format="%(message)s", datefmt="[%X]", handlers=[RichHandler(rich_tracebacks=True)])
