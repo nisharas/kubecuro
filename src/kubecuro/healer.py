@@ -11,22 +11,19 @@ import difflib
 from io import StringIO
 from ruamel.yaml import YAML
 
-# Import Shield to get the migration map
-try:
-    from .shield import Shield
-except ImportError:
-    # Fallback if running as a standalone script
-    class Shield:
-        DEPRECATIONS = {"extensions/v1beta1": {"Ingress": "networking.k8s.io/v1", "Deployment": "apps/v1"}}
+# Strict relative import to ensure 100% logic alignment with Shield
+from .shield import Shield
 
 def linter_engine(file_path, apply_api_fixes=True):
     """
     1. Repairs broken YAML syntax (missing colons, tabs, etc.)
-    2. Migrates deprecated API versions to stable ones.
+    2. Migrates deprecated API versions to stable ones using Shield's logic.
     """
+    # Round-trip loader to preserve comments and formatting
     yaml = YAML(typ='rt', pure=True)
     yaml.indent(mapping=2, sequence=4, offset=2)
     yaml.preserve_quotes = True
+    
     shield = Shield()
     
     try:
@@ -57,8 +54,10 @@ def linter_engine(file_path, apply_api_fixes=True):
                     api = parsed.get('apiVersion')
                     
                     # Check if Shield considers this API deprecated
+                    # Accessing via the instance to ensure we get the full DEPRECATIONS map
                     if api in shield.DEPRECATIONS:
                         mapping = shield.DEPRECATIONS[api]
+                        # Handle resource-specific mapping or default group migration
                         new_api = mapping.get(kind, mapping.get("default")) if isinstance(mapping, dict) else mapping
                         if new_api:
                             parsed['apiVersion'] = new_api
@@ -85,7 +84,7 @@ def linter_engine(file_path, apply_api_fixes=True):
         if not diff:
             return False # No changes made
         else:
-            # Print report only if called as a script
+            # Print report only if called as a script (for testing)
             if __name__ == "__main__":
                 print(f"\n🩺 [DIAGNOSTIC REPORT] File: {file_path}")
                 for line in diff:
@@ -106,4 +105,5 @@ if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] in ["-h", "--help"]:
         print("Usage: healer.py <filename.yaml>")
     else:
+        # Note: Running as a script requires proper PYTHONPATH since we use relative imports
         linter_engine(sys.argv[1])
