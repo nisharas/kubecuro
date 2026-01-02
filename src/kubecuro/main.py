@@ -183,23 +183,39 @@ def run():
     all_issues.extend(syn.audit())
 
     # 4. Output Results Table
+    # --- 4. OUTPUT RESULTS ---
     if not all_issues:
         console.print("\n[bold green]✔ No issues found. Your manifests are logically sound![/bold green]")
     else:
+        # Create Table
         res_table = Table(title="\n📊 Diagnostic Report", header_style="bold cyan", box=None, padding=(0, 1))
         res_table.add_column("Severity", justify="left")
         res_table.add_column("File", style="dim")
         res_table.add_column("Message", soft_wrap=True)
         
         for i in all_issues:
-            # Color coding for severity
             color = "red" if "🔴" in i.severity else "orange3" if "🟠" in i.severity else "green"
             res_table.add_row(f"[{color}]{i.severity}[/{color}]", i.file, i.message)
             
         console.print(res_table)
-        
-        if args.command == "scan":
-            console.print(f"\n[bold yellow]TIP:[/bold yellow] Found {len(all_issues)} issues. Run [bold cyan]kubecuro fix {target}[/bold cyan] to auto-repair syntax and APIs.")
 
+        # --- NEW: SUMMARY SECTION ---
+        ghost_count = sum(1 for i in all_issues if i.code == "GHOST")
+        hpa_count = sum(1 for i in all_issues if i.code == "HPA_LOGIC")
+        fix_count = sum(1 for i in all_issues if i.code == "FIXED")
+        
+        summary_md = f"""
+### 📈 Audit Summary
+* **Ghost Services:** {ghost_count} (Services with no matching Pods)
+* **HPA Logic Gaps:** {hpa_count} (Scaling risks)
+* **Auto-Repairs:** {fix_count} (Files syntax-healed)
+        """
+        
+        # Determine overall health status
+        status_color = "red" if (ghost_count + hpa_count) > 0 else "green"
+        console.print(Panel(Markdown(summary_md), title="Summary & Impact", border_style=status_color))
+
+        if args.command == "scan":
+            console.print(f"\n[bold yellow]TIP:[/bold yellow] Found {len(all_issues)} issues. Run [bold cyan]kubecuro fix {target}[/bold cyan] to auto-repair syntax.")
 if __name__ == "__main__":
     run()
