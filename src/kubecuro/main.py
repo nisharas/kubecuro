@@ -1,7 +1,7 @@
 """
 --------------------------------------------------------------------------------
 AUTHOR:      Nishar A Sunkesala / FixMyK8s
-PURPOSE:     Main Entry Point for KubeCuro with Extensive Diagnostics & Checklist.
+PURPOSE:     Main Entry Point for KubeCuro: Logic Diagnostics & Auto-Healing.
 --------------------------------------------------------------------------------
 """
 import sys
@@ -33,6 +33,7 @@ logging.basicConfig(
 log = logging.getLogger("rich")
 console = Console()
 
+# --- Resource Explanations Catalog ---
 # --- Extensive Resource Explanations Catalog ---
 EXPLAIN_CATALOG = {
     "service": """
@@ -95,40 +96,25 @@ KubeCuro checks for **Placement Contradictions**:
 }
 
 def show_help():
-    """Displays high-level usage."""
     help_console = Console()
     help_console.print(Panel("[bold green]❤️ KubeCuro[/bold green] | Kubernetes Logic Diagnostics", expand=False))
-    help_console.print("\n[bold yellow]Usage:[/bold yellow] kubecuro [command] [target] [flags]")
+    help_console.print("\n[bold yellow]Usage:[/bold yellow] kubecuro [command] [target]")
     
     table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_row("\n[bold cyan]Available Commands:[/bold cyan]", "")
-    table.add_row("  scan", "Analyze manifests for logical errors (default)")
-    table.add_row("  fix", "Scan and automatically repair manifests")
-    table.add_row("  explain", "Describe the logic KubeCuro uses for specific resources")
-    table.add_row("  checklist", "Show a bird's-eye view of all KubeCuro logic rules")
-    table.add_row("  version", "Print version and architecture info")
+    table.add_row("  scan", "Analyze manifests for logical errors (Read-only)")
+    table.add_row("  fix", "Automatically repair syntax and API deprecations")
+    table.add_row("  explain", "Describe logic used for specific resources")
+    table.add_row("  checklist", "Show all logic rules")
     
     help_console.print(table)
-    help_console.print("\nUse \"kubecuro [command] --help\" for more information.")
 
 def show_checklist():
-    """Prints a table of all logic rules (The Bird's-Eye View)."""
-    table = Table(title="📋 KubeCuro Logic Checklist", header_style="bold magenta", box=None)
-    table.add_column("Resource", style="cyan", no_wrap=True)
-    table.add_column("Audit Logic / Validation Check", style="white")
-
-    table.add_row("Service", "Selector Match, Port Alignment, Endpoint/Workload Linkage")
-    table.add_row("Deployment", "Image Tag Safety, Replica/Strategy Logic, Selector Immutability")
-    table.add_row("Ingress", "Backend Service Mapping, Port Consistency, TLS Secret Existence")
-    table.add_row("NetworkPolicy", "PodSelector Targeting, Namespace Alignment, Egress/Ingress Port Validity")
-    table.add_row("ConfigMap", "Volume Mount Existence, EnvVar Key Mapping, Orphaned Resource Detection")
-    table.add_row("HPA", "ScaleTargetRef Validity, Resource Request Presence for Scaling")
-    table.add_row("General", "YAML Syntax Healing, API Deprecation (Shield Engine)")
-    table.add_row("StatefulSet", "Headless Service Linkage, Volume Template Identity")
-    table.add_row("Probes", "Liveness/Readiness Port Validity, Timing Contradictions")
-    table.add_row("Scheduling", "Taint/Toleration Logic, Affinity Conflict Detection")
-    table.add_row("Resources", "Limit/Request Ratio, Resource Quota Alignment")
-    
+    table = Table(title="📋 KubeCuro Logic Checklist", header_style="bold magenta")
+    table.add_column("Resource", style="cyan")
+    table.add_column("Audit Logic")
+    table.add_row("Service", "Selector/Workload Linkage, Port Mapping")
+    table.add_row("HPA", "Resource Request Presence, Target Validity")
+    table.add_row("Shield", "API Version Deprecation, Security Gaps")
     console.print(table)
 
 def run():
@@ -137,43 +123,30 @@ def run():
     parser.add_argument("-h", "--help", action="store_true")
     
     subparsers = parser.add_subparsers(dest="command")
-
-    # Commands
-    subparsers.add_parser("scan", add_help=False).add_argument("target", nargs="?")
-    subparsers.add_parser("fix", add_help=False).add_argument("target", nargs="?")
-    subparsers.add_parser("checklist", add_help=False)
-    subparsers.add_parser("version", add_help=False)
+    subparsers.add_parser("scan").add_argument("target", nargs="?")
+    subparsers.add_parser("fix").add_argument("target", nargs="?")
+    subparsers.add_parser("checklist")
+    subparsers.add_parser("version")
     
-    explain_p = subparsers.add_parser("explain", add_help=False)
+    explain_p = subparsers.add_parser("explain")
     explain_p.add_argument("resource", nargs="?")
 
     args, unknown = parser.parse_known_args()
 
     if args.help or (not args.command and not args.version):
-        show_help()
-        return
-
+        show_help(); return
     if args.version or args.command == "version":
-        console.print("[bold magenta]KubeCuro Version:[/bold magenta] 1.0.0 (x86_64 Static)")
-        return
-
+        console.print("[bold magenta]KubeCuro Version:[/bold magenta] 1.0.0"); return
     if args.command == "checklist":
-        show_checklist()
-        return
-
+        show_checklist(); return
     if args.command == "explain":
         res = args.resource.lower() if args.resource else ""
-        if res in EXPLAIN_CATALOG:
-            console.print(Panel(Markdown(EXPLAIN_CATALOG[res]), title=f"Logic: {res}", border_style="cyan"))
-        else:
-            console.print("[yellow]Try: explain [service|deployment|ingress|networkpolicy|configmap|hpa][/yellow]")
-        return
+        console.print(Panel(Markdown(EXPLAIN_CATALOG.get(res, "Resource not found.")), title=f"Logic: {res}")); return
 
-    # Logic for Scan/Fix
+    # Target Logic
     target = getattr(args, 'target', None) or (unknown[0] if unknown else None)
     if not target or not os.path.exists(target):
-        log.error(f"Valid target path required.")
-        sys.exit(1)
+        log.error("Valid target path required."); sys.exit(1)
 
     console.print(Panel(f"❤️ [bold white]KubeCuro {args.command.upper()}[/bold white]", style="bold magenta"))
     
@@ -183,33 +156,42 @@ def run():
     
     files = [os.path.join(target, f) for f in os.listdir(target) if f.endswith(('.yaml', '.yml'))] if os.path.isdir(target) else [target]
 
-    with console.status(f"[bold green]Executing {args.command}...") as status:
+    with console.status(f"[bold green]Processing {len(files)} files...") as status:
         for f in files:
-            try:
+            fname = os.path.basename(f)
+            
+            # 1. HEALER PHASE
+            # If command is 'fix', we actually write changes. If 'scan', we just check.
+            if args.command == "fix":
                 if linter_engine(f):
-                    all_issues.append(AuditIssue("Healer", "SYNTAX", "🟡 LOW", os.path.basename(f), "Healed YAML", "None"))
-            except: pass
+                    all_issues.append(AuditIssue("Healer", "FIXED", "🟢 FIXED", fname, "Repaired YAML Syntax/API", "None"))
             
+            # 2. SYNAPSE SCAN (Metadata Collection)
             syn.scan_file(f)
-            
-            try:
-                from ruamel.yaml import YAML
-                y = YAML(typ='safe', pure=True)
-                with open(f, 'r') as c:
-                    for d in [doc for doc in y.load_all(c) if doc]:
-                        w = shield.check_version(d)
-                        if w: all_issues.append(AuditIssue("Shield", "API", "🟠 MED", os.path.basename(f), w, "Update API"))
-            except: pass
 
+    # 3. SHIELD & SYNAPSE AUDIT (Cross-resource logic)
+    # Check for API Deprecations in the docs collected by Synapse
+    for doc in syn.workload_docs:
+        # Check for retired APIs
+        warn = shield.check_version(doc)
+        if warn:
+            all_issues.append(AuditIssue("Shield", "API", "🟠 MED", "manifest", warn, "Update API version"))
+
+    # Add the deep logic analysis results
     all_issues.extend(syn.audit())
 
+    # --- OUTPUT RESULTS ---
     if not all_issues:
-        console.print("\n[bold green]✔ No issues found.[/bold green]")
+        console.print("\n[bold green]✔ No issues found. Manifests are healthy![/bold green]")
     else:
-        res_table = Table(title="\n📊 Results", header_style="bold cyan")
-        res_table.add_column("File"); res_table.add_column("Issue")
-        for i in all_issues: res_table.add_row(i.file, i.message)
+        res_table = Table(title="\n📊 Diagnostic Report", header_style="bold cyan")
+        res_table.add_column("Severity"); res_table.add_column("File"); res_table.add_column("Message")
+        for i in all_issues:
+            res_table.add_row(i.severity, i.file, i.message)
         console.print(res_table)
+        
+        if args.command == "scan":
+            console.print(f"\n[bold yellow]TIP:[/bold yellow] Found {len(all_issues)} issues. Run [bold cyan]kubecuro fix[/bold cyan] to auto-repair.")
 
 if __name__ == "__main__":
     run()
