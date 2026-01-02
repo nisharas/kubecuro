@@ -175,7 +175,7 @@ def run():
         # Check for retired APIs
         warn = shield.check_version(doc)
         if warn:
-            all_issues.append(AuditIssue("Shield", "API", "🟠 MED", "manifest", warn, "Update API version"))
+            all_issues.append(AuditIssue("Shield", "API", "🟠 MED", doc.get('_origin_file', 'unknown'), warn, "Update API version"))
 
     # Add the deep logic analysis results
     all_issues.extend(syn.audit())
