@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-echo "📦 1. Deep cleaning workspace..."
-rm -rf build/ dist/ *.spec
+echo "🧹 1. Deep cleaning workspace..."
+rm -rf build/ dist/ *.spec *.egg-info
 # Clear PyInstaller's internal cache
 pyinstaller --clean -y /dev/null &>/dev/null || true 
 
@@ -12,6 +12,7 @@ pyinstaller --onefile \
             --clean \
             --name kubecuro_dynamic \
             --paths src \
+            --add-data "assets/*.png:assets" \
             --collect-all rich \
             --hidden-import ruamel.yaml \
             --exclude-module _ruamel_yaml_clib \
