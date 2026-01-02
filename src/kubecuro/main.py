@@ -12,6 +12,7 @@ from typing import List
 
 # UI and Logging Imports
 from rich.console import Console
+# Table and Panel are imported but handled within the main logic
 from rich.table import Table
 from rich.panel import Panel
 from rich.logging import RichHandler
@@ -53,10 +54,12 @@ def run():
         ))
         return
 
+    # Handle Version
     if args.version:
         console.print("[bold magenta]KubeCuro Version:[/bold magenta] 1.0.0")
         return
 
+    # Validate Path
     target = args.target
     if not os.path.exists(target):
         log.error(f"Path '{target}' not found.")
@@ -69,6 +72,7 @@ def run():
     shield = Shield()
     all_issues: List[AuditIssue] = []
     
+    # Identify files to scan
     if os.path.isdir(target):
         files = [os.path.join(target, f) for f in os.listdir(target) if f.endswith(('.yaml', '.yml'))]
     else:
@@ -85,6 +89,7 @@ def run():
             
             # 1. Healer (Syntax Audit)
             try:
+                # linter_engine should also use pure=True internally in healer.py
                 if linter_engine(f):
                     all_issues.append(AuditIssue(
                         engine="Healer", code="SYNTAX", severity="🟡 LOW", 
@@ -100,6 +105,7 @@ def run():
             # 3. Shield (API Deprecation Scan)
             try:
                 from ruamel.yaml import YAML
+                # FORCED PURE=TRUE TO BYPASS STATICX RPATH ERRORS
                 y = YAML(typ='safe', pure=True)
                 with open(f, 'r') as content:
                     docs = list(y.load_all(content))
@@ -133,6 +139,7 @@ def run():
         console.print(table)
 
     # --- PHASE 4: Remediation Guide ---
+    # Only show remediation for MED/HIGH issues to keep output clean
     critical_issues = [i for i in all_issues if i.severity != "🟡 LOW"]
     if critical_issues:
         console.print("\n[bold green]💡 FIXMYK8S REMEDIATION GUIDE:[/bold green]")
