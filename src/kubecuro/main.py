@@ -33,7 +33,6 @@ logging.basicConfig(
 log = logging.getLogger("rich")
 console = Console()
 
-# --- Resource Explanations Catalog ---
 # --- Extensive Resource Explanations Catalog ---
 EXPLAIN_CATALOG = {
     "service": """
@@ -115,6 +114,7 @@ def show_checklist():
     table.add_row("Service", "Selector/Workload Linkage, Port Mapping")
     table.add_row("HPA", "Resource Request Presence, Target Validity")
     table.add_row("Shield", "API Version Deprecation, Security Gaps")
+    table.add_row("Synapse", "Cross-resource Ingress, ConfigMap, and STS checks")
     console.print(table)
 
 def run():
@@ -133,6 +133,7 @@ def run():
 
     args, unknown = parser.parse_known_args()
 
+    # 1. Handle Global Flags
     if args.help or (not args.command and not args.version):
         show_help(); return
     if args.version or args.command == "version":
@@ -143,10 +144,10 @@ def run():
         res = args.resource.lower() if args.resource else ""
         console.print(Panel(Markdown(EXPLAIN_CATALOG.get(res, "Resource not found.")), title=f"Logic: {res}")); return
 
-    # Target Logic
+    # 2. Identify Target Path
     target = getattr(args, 'target', None) or (unknown[0] if unknown else None)
     if not target or not os.path.exists(target):
-        log.error("Valid target path required."); sys.exit(1)
+        log.error("[bold red]Error:[/bold red] Valid target path (file or directory) required."); sys.exit(1)
 
     console.print(Panel(f"❤️ [bold white]KubeCuro {args.command.upper()}[/bold white]", style="bold magenta"))
     
@@ -156,42 +157,49 @@ def run():
     
     files = [os.path.join(target, f) for f in os.listdir(target) if f.endswith(('.yaml', '.yml'))] if os.path.isdir(target) else [target]
 
+    # 3. Execution Phase
     with console.status(f"[bold green]Processing {len(files)} files...") as status:
         for f in files:
             fname = os.path.basename(f)
             
-            # 1. HEALER PHASE
-            # If command is 'fix', we actually write changes. If 'scan', we just check.
+            # --- PHASE A: HEALER (Direct Modification) ---
             if args.command == "fix":
                 if linter_engine(f):
-                    all_issues.append(AuditIssue("Healer", "FIXED", "🟢 FIXED", fname, "Repaired YAML Syntax/API", "None"))
+                    all_issues.append(AuditIssue("Healer", "FIXED", "🟢 FIXED", fname, "Repaired YAML Syntax and migrated API versions.", "None"))
             
-            # 2. SYNAPSE SCAN (Metadata Collection)
+            # --- PHASE B: SYNAPSE (Build Logic Map) ---
             syn.scan_file(f)
 
-    # 3. SHIELD & SYNAPSE AUDIT (Cross-resource logic)
-    # Check for API Deprecations in the docs collected by Synapse
+    # --- PHASE C: SHIELD (Static API Security Audit) ---
+    # We audit all workloads extracted by Synapse for deprecations
     for doc in syn.workload_docs:
-        # Check for retired APIs
         warn = shield.check_version(doc)
         if warn:
-            all_issues.append(AuditIssue("Shield", "API", "🟠 MED", doc.get('_origin_file', 'unknown'), warn, "Update API version"))
+            # Attribution using the Synapse origin tag
+            origin_file = doc.get('_origin_file', 'unknown')
+            all_issues.append(AuditIssue("Shield", "API", "🟠 MED", origin_file, warn, "Update API version"))
 
-    # Add the deep logic analysis results
+    # --- PHASE D: SYNAPSE (Relationship & Logic Audit) ---
     all_issues.extend(syn.audit())
 
-    # --- OUTPUT RESULTS ---
+    # 4. Output Results Table
     if not all_issues:
-        console.print("\n[bold green]✔ No issues found. Manifests are healthy![/bold green]")
+        console.print("\n[bold green]✔ No issues found. Your manifests are logically sound![/bold green]")
     else:
-        res_table = Table(title="\n📊 Diagnostic Report", header_style="bold cyan")
-        res_table.add_column("Severity"); res_table.add_column("File"); res_table.add_column("Message")
+        res_table = Table(title="\n📊 Diagnostic Report", header_style="bold cyan", box=None, padding=(0, 1))
+        res_table.add_column("Severity", justify="left")
+        res_table.add_column("File", style="dim")
+        res_table.add_column("Message", soft_wrap=True)
+        
         for i in all_issues:
-            res_table.add_row(i.severity, i.file, i.message)
+            # Color coding for severity
+            color = "red" if "🔴" in i.severity else "orange3" if "🟠" in i.severity else "green"
+            res_table.add_row(f"[{color}]{i.severity}[/{color}]", i.file, i.message)
+            
         console.print(res_table)
         
         if args.command == "scan":
-            console.print(f"\n[bold yellow]TIP:[/bold yellow] Found {len(all_issues)} issues. Run [bold cyan]kubecuro fix[/bold cyan] to auto-repair.")
+            console.print(f"\n[bold yellow]TIP:[/bold yellow] Found {len(all_issues)} issues. Run [bold cyan]kubecuro fix {target}[/bold cyan] to auto-repair syntax and APIs.")
 
 if __name__ == "__main__":
     run()
