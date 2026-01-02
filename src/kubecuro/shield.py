@@ -1,16 +1,14 @@
 """
 --------------------------------------------------------------------------------
-AUTHOR:         Nishar A Sunkesala / FixMyK8s
-DATE:           2025-12-31
-PURPOSE:        The Shield Engine: API Deprecation Guard.
-                Maps legacy K8s API versions to modern, stable alternatives.
+AUTHOR:          Nishar A Sunkesala / FixMyK8s
+PURPOSE:         The Shield Engine: API Deprecation & Resource Stability Guard.
 --------------------------------------------------------------------------------
 """
 
 class Shield:
-    """The Deprecation Engine: Protects against outdated API versions."""
+    """The Stability Engine: Protects against outdated APIs and misconfigured HPA logic."""
     
-    # Database of retired APIs
+    # Comprehensive Database of retired APIs
     DEPRECATIONS = {
         "extensions/v1beta1": {
             "Ingress": "networking.k8s.io/v1",
@@ -23,12 +21,14 @@ class Shield:
         "networking.k8s.io/v1beta1": "networking.k8s.io/v1",
         "policy/v1beta1": "policy/v1",
         "rbac.authorization.k8s.io/v1beta1": "rbac.authorization.k8s.io/v1",
+        "autoscaling/v2beta1": "autoscaling/v2", # HPA Deprecation
+        "autoscaling/v2beta2": "autoscaling/v2", # HPA Deprecation
         "admissionregistration.k8s.io/v1beta1": "admissionregistration.k8s.io/v1",
         "apiextensions.k8s.io/v1beta1": "apiextensions.k8s.io/v1"
     }
 
-    def check_version(self, doc):
-        """Returns a high-impact warning if the API version is retired."""
+    def check_version(self, doc: dict) -> str:
+        """Checks for retired API versions."""
         if not doc or not isinstance(doc, dict):
             return None
             
@@ -37,13 +37,42 @@ class Shield:
         
         if api in self.DEPRECATIONS:
             mapping = self.DEPRECATIONS[api]
-            
-            # Handle complex mappings (like extensions/v1beta1)
-            if isinstance(mapping, dict):
-                better = mapping.get(kind, mapping.get("default"))
-            else:
-                better = mapping
-                
-            return f"🛡️  [DEPRECATED API] {kind} uses '{api}'. This is retired in modern clusters! Use '{better}' instead."
+            better = mapping.get(kind, mapping.get("default")) if isinstance(mapping, dict) else mapping
+            return f"🛡️ [DEPRECATED API] {kind} uses '{api}'. Use '{better}' instead."
         
         return None
+
+    def audit_hpa(self, hpa_doc: dict, workload_docs: list) -> list:
+        """
+        Specific Logic Audit for HPA.
+        Checks if the target workload has resource requests defined.
+        """
+        issues = []
+        if hpa_doc.get('kind') != 'HorizontalPodAutoscaler':
+            return issues
+
+        spec = hpa_doc.get('spec', {})
+        target_ref = spec.get('scaleTargetRef', {})
+        target_name = target_ref.get('name')
+        
+        # Check for HPA Metric Logic
+        metrics = spec.get('metrics', [])
+        for m in metrics:
+            if m.get('type') == 'Resource':
+                resource_name = m.get('resource', {}).get('name') # e.g., 'cpu'
+                
+                # Find the target workload in the bundle
+                target_workload = next((w for w in workload_docs if w.get('metadata', {}).get('name') == target_name), None)
+                
+                if target_workload:
+                    # Look for resource requests in containers
+                    pod_template = target_workload.get('spec', {}).get('template', {})
+                    containers = pod_template.get('spec', {}).get('containers', [])
+                    
+                    for c in containers:
+                        requests = c.get('resources', {}).get('requests', {})
+                        if resource_name not in requests:
+                            issues.append(
+                                f"📈 [HPA LOGIC ERROR] HPA scales on {resource_name}, but '{target_name}' has no {resource_name} requests. HPA will not trigger!"
+                            )
+        return issues
