@@ -53,6 +53,19 @@ Thanks to the static build process, KubeCuro is a single, 10MB binary.
     * Just chmod +x and run. This makes it perfect for Scratch-based Docker images or restricted CI runners.
 
 ---
+## ⚖️ Why KubeCuro? (The Logic Gap)
+
+Most tools only check if the "grammar" of your YAML is correct. KubeCuro checks if the "story" makes sense.
+
+| Feature | Standard Linters | KubeCuro |
+| --- | --- | --- |
+| YAML Syntax Check | ✅ | ✅ | 
+| Schema Validation | ✅ | ✅ |
+| Auto-Heal Formatting | ❌ | ✅ | 
+| Cross-File Logic (Synapse) | ❌ | ✅ |
+| Service-to-Pod Mapping | ❌ | ✅ | 
+| Port Alignment Audit | ❌ | ✅ |
+---
 
 ## 🛡️ Security & Privacy Audit
 
@@ -65,31 +78,65 @@ KubeCuro is designed with a "Security-First" architecture, operating as a locali
 
 ---
 
-## 💻 Usage
+## 🩺 Diagnostic Intelligence
 
-**Scan a Single File**
-```bash
-kubecuro pod.yaml
+KubeCuro categorizes issues based on their impact on cluster stability:
 
-```
-
-**Scan an Entire Directory**
-Cross-references all manifests within the folder to find logical gaps.
-
-```bash
-kubecuro ./k8s-manifests/
-
-```
-
-**Get Help**
-
-```bash
-kubecuro --help
-
-```
+- GHOST (Critical): Service exists, but its selector matches zero Pods. Traffic will be dropped.
+- PORT (Critical): Service targetPort does not match any containerPort in the targeted Pods.
+- NAMESPACE (Warning): Matches found, but resources are isolated in different namespaces.
+- API (Warning): Using deprecated API versions (e.g., extensions/v1beta1) that will fail on upgrade.
 
 ---
+## ⚖️ Design Philosophy: The "Safe" CNCF Approach
+KubeCuro is built on the principle of Predictable Automation. We distinguish between structural repair and logical intent to ensure your manifests remain under your total control.
 
+🩺 The Healer (Active): Auto-fixes Syntax. It handles the "busy work" by repairing indentation, fixing tab/space conflicts, and ensuring YAML standards (via ruamel.yaml).
+
+🧠 Synapse & Shield (Passive): Provides Intelligence. These engines detect logical gaps (like GHOST services) and security risks. Instead of making dangerous assumptions, they provide a Remediation Guide so a human engineer can make the final, informed decision.
+
+Why? In production Kubernetes environments, auto-fixing a label could accidentally route traffic to the wrong database. KubeCuro fixes the format but respects your intent.
+
+---
+## 📊 Sample Report
+
+When you run kubecuro, it generates a high-fidelity diagnostic report. Below is an example of a scan detecting a GHOST service (label mismatch) and a deprecated API.
+```text
+KubeCuro: Kubernetes Logic Diagnostics
+────────────────────────────────────────────────────────────────────────────────
+
+🩺 [DIAGNOSTIC REPORT] File: web-service.yaml
+============================================================
+-  selector:
+-      app: web-server    <-- (Error: Mixed tabs/spaces)
++  selector:
++    app: web-server      <-- (Healed: Standard 2-space indent)
+============================================================
+SUCCESS: Configuration file 'web-service.yaml' has been healed.
+
+📊 Diagnostic Summary
+┌──────────┬─────────┬──────────┬──────────────────────────────────────────────┐
+│ File     │ Engine  │ Severity │ Issue Description                            │
+├──────────┼─────────┼──────────┼──────────────────────────────────────────────┤
+│ svc.yaml │ Healer  │ 🟡 LOW   │ Auto-healed YAML formatting                  │
+│ svc.yaml │ Synapse │ 🔴 HIGH  │ Service 'web-svc' targets labels {'app':     │
+│          │         │          │ 'nginx'} but matches 0 Pods.                 │
+│ ing.yaml │ Shield  │ 🟠 MED   │ 🛡️ [DEPRECATED API] Ingress uses             │
+│          │         │          │ 'extensions/v1beta1'. Retired in 1.22+       │
+└──────────┴─────────┴──────────┴──────────────────────────────────────────────┘
+
+💡 FIXMYK8S REMEDIATION GUIDE:
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Fix for svc.yaml                                                             ┃
+┃ GHOST: Check labels in Deployment/Pod or update Service selector in svc.yaml.┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Fix for ing.yaml                                                             ┃
+┃ API: Update apiVersion to 'networking.k8s.io/v1' for Ingress objects.        ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+✔ Diagnosis Complete. Powered by FixMyK8s.
+```
 ## 🛠️ Installation
 
 ### Option A: Standalone Binary (Recommended)
@@ -117,37 +164,27 @@ pip install -e .
 
 ```
 
----
+## 💻 Usage
 
-## 🩺 Diagnostic Intelligence
+**Scan a Single File**
+```bash
+kubecuro pod.yaml
 
-| Signal | Category | Resolution Strategy |
-| --- | --- | --- |
-| **🩺 DIAGNOSTIC** | Structure | Auto-heals syntax and indentation. |
-| **🌐 NAMESPACE** | Connectivity | Align the `namespace` field between Service & Pod. |
-| **👻 GHOST** | Orphanage | Match Service `selectors` to Deployment `template` labels. |
-| **🔌 PORT** | Networking | Align `targetPort` in Service with `containerPort` in Pod. |
-| **🛡️ API SHIELD** | Compliance | Migrate to the recommended stable API version. |
+```
 
----
+**Scan an Entire Directory**
+Cross-references all manifests within the folder to find logical gaps.
 
-## 📊 Sample Report
+```bash
+kubecuro ./k8s-manifests/
 
-KubeCuro provides a clear, severity-ranked breakdown of your infrastructure's health:
+```
 
-FINAL SUMMARY
-| File Name | Severity   | Engine   | Issues Found   | Status       |
-| --- | --- | --- | --- | --- |
-| web.yaml  | 🔴 HIGH    | Synapse  | GHOST          | ❌ Logic Gap |
-| ing.yaml  | 🟠 MED     | Shield   | DEPRECATED API | ⚠️ Warning   |
+**Get Help**
 
-```text
-💡 SUGGESTED REMEDIATIONS:
-======================================================================
-👉 [GHOST]: Update Service 'selector' to match Pod 'labels'.
-👉 [PORT]: Align Service 'targetPort' with Pod 'containerPort'.
-👉 [API]: Update 'apiVersion' to 'networking.k8s.io/v1' for Ingress.
-======================================================================
+```bash
+kubecuro --help
+
 ```
 
 ---
@@ -178,6 +215,9 @@ If you find this tool helpful, you can support my work by buying me a coffee. Ev
 | :---: | :--- |
 | <img src="https://github.com/nisharas/kubecuro/blob/main/assets/bmc_qr.png?raw=true" width="150"> | [Buy Me a Coffee](https://www.buymeacoffee.com/fixmyk8s) |
 
+* Governance: See [MAINTAINERS.md](https://github.com/nisharas/kubecuro/blob/main/MAINTAINERS.md) and [ADOPTERS.md](https://github.com/nisharas/kubecuro/blob/main/ADOPTERS.md).
+* **Have a feature idea?** Email me at **fixmyk8s@protonmail.com**
+
 ### 🚀 Corporate Sponsorship
 Is your company using KubeCuro to secure its delivery pipeline? Please consider a corporate sponsorship to help fund:
 * Advanced diagnostic engines.
@@ -185,7 +225,8 @@ Is your company using KubeCuro to secure its delivery pipeline? Please consider 
 * Dedicated community support.
 
 Reach out to me at **fixmyk8s@protonmail.com** for formal sponsorship inquiries.
-* **Have a feature idea?** Email me at **fixmyk8s@protonmail.com**
+
+
 
 **Built with ❤️ by Nishar A Sunkesala and the Kubecuro Community | Powered by FixMyK8s**
 
