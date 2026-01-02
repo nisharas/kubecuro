@@ -7,6 +7,7 @@ PURPOSE:        Main Entry Point for KubeCuro with Rich UI.
 import sys
 import os
 import logging
+import argparse
 from typing import List
 
 # UI and Logging Imports
@@ -20,7 +21,6 @@ from kubecuro.healer import linter_engine
 from kubecuro.synapse import Synapse
 from kubecuro.shield import Shield
 from kubecuro.models import AuditIssue
-from kubecuro.utils.logger import get_logger
 
 # Setup Rich Logging
 logging.basicConfig(
@@ -34,14 +34,33 @@ console = Console()
 
 def run():
     """Main execution loop for KubeCuro."""
-    if len(sys.argv) < 2:
-        console.print("[bold cyan]Usage: kubecuro <file_or_directory>[/bold cyan]")
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("target", nargs="?", help="File or directory to scan")
+    parser.add_argument("-h", "--help", action="store_true")
+    parser.add_argument("-v", "--version", action="store_true")
+    
+    args = parser.parse_args()
+
+    # Handle Help Menu
+    if args.help or (not args.target and not args.version):
+        console.print(Panel.fit(
+            "💓 [bold magenta]KubeCuro[/bold magenta] | Kubernetes Logic Diagnostics\n\n"
+            "[bold cyan]Usage:[/bold cyan] kubecuro <file_or_directory>\n\n"
+            "[bold yellow]Options:[/bold yellow]\n"
+            "  -h, --help      Show this menu\n"
+            "  -v, --version   Show version info",
+            title="Help", border_style="blue"
+        ))
         return
 
-    target = sys.argv[1]
+    if args.version:
+        console.print("[bold magenta]KubeCuro Version:[/bold magenta] 1.0.0")
+        return
+
+    target = args.target
     if not os.path.exists(target):
         log.error(f"Path '{target}' not found.")
-        return
+        sys.exit(1)
 
     # Header Panel
     console.print(Panel("💓 [bold white]KubeCuro: Kubernetes Logic Diagnostics[/bold white]", style="bold magenta"))
@@ -50,7 +69,6 @@ def run():
     shield = Shield()
     all_issues: List[AuditIssue] = []
     
-    # Identify files to scan
     if os.path.isdir(target):
         files = [os.path.join(target, f) for f in os.listdir(target) if f.endswith(('.yaml', '.yml'))]
     else:
@@ -86,12 +104,13 @@ def run():
                 with open(f, 'r') as content:
                     docs = list(y.load_all(content))
                     for d in docs:
+                        if not d: continue
                         warn = shield.check_version(d)
                         if warn:
                             all_issues.append(AuditIssue(
                                 engine="Shield", code="API", severity="🟠 MED", 
                                 file=fname, message=warn, 
-                                remediation="Update apiVersion to a stable/supported version."
+                                remediation="Update apiVersion to a stable version."
                             ))
             except Exception:
                 pass
@@ -111,13 +130,10 @@ def run():
         
         for issue in all_issues:
             table.add_row(issue.file, issue.engine, issue.severity, issue.message)
-
         console.print(table)
 
     # --- PHASE 4: Remediation Guide ---
-    # Only show remediation for MED/HIGH issues to keep output clean
     critical_issues = [i for i in all_issues if i.severity != "🟡 LOW"]
-    
     if critical_issues:
         console.print("\n[bold green]💡 FIXMYK8S REMEDIATION GUIDE:[/bold green]")
         for issue in critical_issues:
