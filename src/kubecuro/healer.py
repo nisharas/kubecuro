@@ -13,7 +13,10 @@ from io import StringIO
 from ruamel.yaml import YAML
 
 # Strict relative import to ensure 100% logic alignment with Shield
-from .shield import Shield
+try:
+    from .shield import Shield
+except ImportError:
+    from shield import Shield
 
 def linter_engine(file_path, apply_api_fixes=True, dry_run=False):
     """
