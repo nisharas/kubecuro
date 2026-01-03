@@ -4,6 +4,7 @@ AUTHOR:      Nishar A Sunkesala / FixMyK8s
 PURPOSE:      Main Entry Point for KubeCuro: Logic Diagnostics & Auto-Healing.
 --------------------------------------------------------------------------------
 """
+import argcomplete
 import sys
 import os
 import logging
@@ -18,7 +19,6 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.logging import RichHandler
 from rich.markdown import Markdown
-from rich.text import Text
 
 # Internal Package Imports
 from kubecuro.healer import linter_engine
@@ -187,6 +187,7 @@ def run():
     if not os.path.exists(logo_path):
         # We don't crash, but we log a warning for debugging the binary
         log.debug(f"⚠️ UI Asset missing at {logo_path}")
+
     
     parser = argparse.ArgumentParser(prog="kubecuro", add_help=False)
     parser.add_argument("-v", "--version", action="store_true")
@@ -202,7 +203,20 @@ def run():
     explain_p = subparsers.add_parser("explain")
     explain_p.add_argument("resource", nargs="?")
 
+    argcomplete.autocomplete(parser)
+
     args, unknown = parser.parse_known_args()
+
+    # Add a handler for the completion command if you choose to add a subparser for it
+    if args.command == "completion":
+        # This logic is usually handled by the 'register-python-argcomplete' tool
+        # but you can print instructions here
+        console.print(Panel(
+            "To enable autocomplete, add the following to your .bashrc or .zshrc:\n\n"
+            "[bold cyan]eval \"$(register-python-argcomplete kubecuro)\"[/bold cyan]",
+            title="Autocomplete Setup"
+        ))
+        return
 
     # 1. Flag-based Actions (Help/Version)
     if args.help or (not args.command and not args.version and not unknown):
