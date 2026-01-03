@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-<img src="https://github.com/nisharas/kubecuro/blob/main/assets/KubeCuro%20Logo%20.png?raw=true" width="300">
+<img src="src/kubecuro/assets/KubeCuro-Logo.png" width="300">
 
 **KubeCuro** is a high-performance, production-grade CLI tool designed to eliminate the "silent killers" of Kubernetes deployments.
 
@@ -268,7 +268,7 @@ If you find this tool helpful, you can support my work by buying me a coffee. Ev
 
 | Scan to Support | Link |
 | :---: | :--- |
-| <img src="https://github.com/nisharas/kubecuro/blob/main/assets/bmc_qr.png?raw=true" width="150"> | [Buy Me a Coffee](https://www.buymeacoffee.com/fixmyk8s) |
+| <img src="src/kubecuro/assets/bmc-qr.png" width="150"> | [Buy Me a Coffee](https://www.buymeacoffee.com/fixmyk8s) |
 
 * Governance: See [MAINTAINERS.md](https://github.com/nisharas/kubecuro/blob/main/MAINTAINERS.md) and [ADOPTERS.md](https://github.com/nisharas/kubecuro/blob/main/ADOPTERS.md).
 * **Have a feature idea?** Email me at **fixmyk8s@protonmail.com**
