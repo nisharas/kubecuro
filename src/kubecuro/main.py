@@ -148,8 +148,7 @@ def show_help():
     help_console.print("  [dim]1. Scan a specific file for logic gaps:[/dim]\n      kubecuro scan deployment.yaml")
     help_console.print("\n  [dim]2. Smart-Route (Automatic Scan if command is omitted):[/dim]\n      kubecuro ./manifests/")
     help_console.print("\n  [dim]3. Automatically fix API deprecations and syntax:[/dim]\n      kubecuro fix ./prod-cluster/")
-    help_console.print("\n  [dim]4. Preview fixes without touching the YAML files:[/dim]\n      kubecuro fix service.yaml --dry-run")
-    help_console.print("\n  [dim]5. Enable Autocomplete:[/dim]")
+    help_console.print("\n  [dim]4. Enable Autocomplete:[/dim]")
     help_console.print("      [bold cyan]source <(kubecuro completion bash)[/bold cyan]  (For Bash)")
     help_console.print("      [bold cyan]source <(kubecuro completion zsh)[/bold cyan]   (For Zsh)")
     
@@ -181,7 +180,12 @@ def run():
     subparsers.add_parser("fix").add_argument("target", nargs="?")
     subparsers.add_parser("checklist")
     subparsers.add_parser("version")
-    subparsers.add_parser("explain").add_argument("resource", nargs="?")
+    
+    # --- SMART COMPLETION FOR EXPLAIN ---
+    # By adding 'choices', argcomplete will now suggest these keys on TAB
+    explain_p = subparsers.add_parser("explain")
+    explain_p.add_argument("resource", nargs="?", choices=list(EXPLAIN_CATALOG.keys()))
+    
     subparsers.add_parser("completion").add_argument("shell", choices=["bash", "zsh"])
 
     # Handshake with Shell Autocomplete
