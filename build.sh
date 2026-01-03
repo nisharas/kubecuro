@@ -8,11 +8,15 @@ pyinstaller --clean -y /dev/null &>/dev/null || true
 
 echo "🐍 2. Building Dynamic Binary..."
 # Note: We still keep the exclusion flags as a double-safety measure
+# 3. Execute PyInstaller
+# --onefile: Bundles everything into a single executable
+# --add-data: Includes your assets folder (format is source:destination)
+# --name: Sets the output binary name
 pyinstaller --onefile \
             --clean \
             --name kubecuro_dynamic \
             --paths src \
-            --add-data "assets/*.png:assets" \
+            --add-data "assets:assets" \
             --collect-all rich \
             --hidden-import ruamel.yaml \
             --exclude-module _ruamel_yaml_clib \
@@ -30,6 +34,7 @@ fi
 
 echo "✅ 4. Build Complete!"
 echo "--------------------------------------"
-echo "Binary location: $(pwd)/dist/kubecuro"
+echo "📂 Binary location: $(pwd)/dist/kubecuro"
 echo "Test it now: ./dist/kubecuro --help"
+echo "💡 To use globally, run: sudo cp dist/kubecuro /usr/local/bin/"
 ./dist/kubecuro --help
