@@ -229,7 +229,11 @@ def run():
     all_issues = []
     
     files = [os.path.join(target, f) for f in os.listdir(target) if f.endswith(('.yaml', '.yml'))] if os.path.isdir(target) else [target]
-
+    # --- NEW: Check for empty file list ---
+    if not files:
+        console.print(f"\n[bold yellow]⚠ No YAML files found in:[/bold yellow] {target}")
+        return
+   
     with console.status(f"[bold green]Processing {len(files)} files...") as status:
         for f in files:
             fname = os.path.basename(f)
@@ -240,7 +244,14 @@ def run():
                     console.print(f"[yellow][DRY-RUN][/yellow] Would analyze and repair: {fname}")
                 else:
                     if linter_engine(f):
-                        all_issues.append(AuditIssue("Healer", "FIXED", "🟢 FIXED", fname, "Repaired YAML Syntax and migrated API versions.", "None"))
+                        all_issues.append(AuditIssue(
+                            code="FIXED", 
+                            severity="🟢 FIXED", 
+                            file=fname, 
+                            message="Repaired YAML Syntax and migrated API versions.", 
+                            fix="None", 
+                            source="Healer"
+                        ))
             
             # --- PHASE B: SYNAPSE (Build Relationship Map) ---
             syn.scan_file(f)
@@ -250,7 +261,15 @@ def run():
         warn = shield.check_version(doc)
         if warn:
             origin = doc.get('_origin_file', 'unknown')
-            all_issues.append(AuditIssue("Shield", "API", "🟠 MED", origin, warn, "Update API version"))
+            # Order: code, severity, file, message, fix, source
+            all_issues.append(AuditIssue(
+                code="API_DEPRECATED", 
+                severity="🟠 MED", 
+                file=origin, 
+                message=warn, 
+                fix="Update API version", 
+                source="Shield"
+            ))
 
     # --- PHASE D: SYNAPSE (Cross-Resource Logic Audit) ---
     all_issues.extend(syn.audit())
@@ -273,11 +292,13 @@ def run():
         ghost_count = sum(1 for i in all_issues if i.code == "GHOST")
         hpa_count = sum(1 for i in all_issues if i.code == "HPA_LOGIC")
         fix_count = sum(1 for i in all_issues if i.code == "FIXED")
+        api_count = sum(1 for i in all_issues if i.code == "API_DEPRECATED")
         
         summary_md = f"""
 ### 📈 Audit Summary
 * **Ghost Services:** {ghost_count} (Services with no pods)
 * **HPA Logic Gaps:** {hpa_count} (Missing requests)
+* **API Warnings:** {api_count} (Outdated versions)
 * **Auto-Repairs:** {fix_count} (Files syntax-healed)
         """
         
