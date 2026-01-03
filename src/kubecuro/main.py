@@ -113,6 +113,25 @@ KubeCuro checks for **Placement Contradictions**:
 
 def show_help():
     help_console = Console()
+    # Full Block / ANSI Shadow Style
+    logo_ascii = r"""
+ ██╗  ██╗██╗   ██╗██████╗ ███████╗ ██████╗██╗   ██╗██████╗  ██████╗ 
+ ██║ ██╔╝██║   ██║██╔══██╗██╔════╝██╔════╝██║   ██║██╔══██╗██╔═══██╗
+ █████╔╝ ██║   ██║██████╔╝█████╗  ██║     ██║   ██║██████╔╝██║   ██║
+ ██╔═██╗ ██║   ██║██╔══██╗██╔══╝  ██║     ██║   ██║██╔══██╗██║   ██║
+ ██║  ██╗╚██████╔╝██████╔╝███████╗╚██████╗╚██████╔╝██║  ██║╚██████╔╝
+ ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ 
+    """
+    
+    # We use a custom color for the block letters (Cyan or Magenta looks best)
+    help_console.print(Panel(
+        f"[bold cyan]{logo_ascii}[/bold cyan]\n"
+        "   [bold magenta]❤️ KubeCuro[/bold magenta] | Kubernetes Logic Diagnostics & YAML Healer",
+        expand=False,
+        border_style="bright_black"
+    ))
+
+    
     help_console.print(Panel("[bold green]❤️ KubeCuro[/bold green] | Kubernetes Logic Diagnostics & YAML Healer", expand=False))
     
     help_console.print("\n[bold yellow]Usage:[/bold yellow]")
