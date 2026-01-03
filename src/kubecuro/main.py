@@ -144,12 +144,14 @@ def show_help():
     opt_table.add_row("  --dry-run", "Show fixes without modifying files (use with 'fix')")
     help_console.print(opt_table)
 
-    help_console.print("\n[bold yellow]Examples:[/bold yellow]")
+    help_console.print("\n[bold yellow]Extensive Examples:[/bold yellow]")
     help_console.print("  [dim]1. Scan a specific file for logic gaps:[/dim]\n      kubecuro scan deployment.yaml")
     help_console.print("\n  [dim]2. Smart-Route (Automatic Scan if command is omitted):[/dim]\n      kubecuro ./manifests/")
     help_console.print("\n  [dim]3. Automatically fix API deprecations and syntax:[/dim]\n      kubecuro fix ./prod-cluster/")
     help_console.print("\n  [dim]4. Preview fixes without touching the YAML files:[/dim]\n      kubecuro fix service.yaml --dry-run")
-    help_console.print("\n  [dim]5. Enable Autocomplete (Zsh):[/dim]\n      source <(kubecuro completion zsh)")
+    help_console.print("\n  [dim]5. Enable Autocomplete:[/dim]")
+    help_console.print("      [bold cyan]source <(kubecuro completion bash)[/bold cyan]  (For Bash)")
+    help_console.print("      [bold cyan]source <(kubecuro completion zsh)[/bold cyan]   (For Zsh)")
     
     help_console.print("\n[italic white]Architecture: Static Binary / x86_64[/italic white]\n")
 
