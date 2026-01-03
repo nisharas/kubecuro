@@ -16,8 +16,9 @@ pyinstaller --onefile \
             --clean \
             --name kubecuro_dynamic \
             --paths src \
-            --add-data "assets:assets" \
+            --add-data "src/kubecuro/assets:kubecuro/assets" \
             --collect-all rich \
+            --collect-all ruamel.yaml \
             --hidden-import ruamel.yaml \
             --exclude-module _ruamel_yaml_clib \
             --exclude-module ruamel.yaml.clib \
@@ -26,7 +27,8 @@ pyinstaller --onefile \
 echo "🛡️ 3. Converting to Static Binary with StaticX..."
 if [ -f "dist/kubecuro_dynamic" ]; then
     # StaticX will now succeed because the .so file is physically missing from the bundle
-    staticx dist/kubecuro_dynamic dist/kubecuro
+    # We use --strip to keep the final binary size small.
+    staticx --strip dist/kubecuro_dynamic dist/kubecuro
 else
     echo "❌ Error: dist/kubecuro_dynamic was not created!"
     exit 1
@@ -37,4 +39,6 @@ echo "--------------------------------------"
 echo "📂 Binary location: $(pwd)/dist/kubecuro"
 echo "Test it now: ./dist/kubecuro --help"
 echo "💡 To use globally, run: sudo cp dist/kubecuro /usr/local/bin/"
+echo "--------------------------------------"
+# Final test of the static binary
 ./dist/kubecuro --help
