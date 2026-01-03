@@ -125,17 +125,16 @@ def show_help():
  ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ 
     """
     
-    # Styled text for the logo
-    styled_logo = Text(logo_ascii, style="bold cyan")
+    # 1. Print the ASCII Art directly to terminal
+    help_console.print(f"[bold cyan]{logo_ascii}[/bold cyan]")
+    
     
     # Branding Panel
     help_console.print(Panel(
-        styled_logo,
-        title="[bold magenta]❤️ KubeCuro[/bold magenta] | Kubernetes Logic Diagnostics & YAML Healer",
+        "[bold magenta]❤️ KubeCuro[/bold magenta] | Kubernetes Logic Diagnostics & YAML Healer",
         subtitle="[italic white]v1.0.0[/italic white]",
         border_style="bright_black",
-        expand=False,
-        padding=(0, 2) # Reduced vertical padding
+        expand=False
     ))
     
     help_console.print("\n[bold yellow]Usage:[/bold yellow]")
@@ -342,8 +341,27 @@ def run():
         status_color = "red" if (ghost_count + hpa_count) > 0 else "green"
         console.print(Panel(Markdown(summary_md), title="Summary & Impact", border_style=status_color))
 
+        # --- FINAL ACTION BANNERS ---
+        # 1. Success Banner (for 'fix' command)
+        if command == "fix" and fix_count > 0 and not args.dry_run:
+            console.print("\n")
+            console.print(Panel(
+                f"[bold green]✔ HEAL COMPLETE:[/bold green] [white]{fix_count} files successfully updated.[/white]",
+                border_style="bold green",
+                expand=False
+            ))
+
+        # 2. Helpful Tip (for 'scan' command if issues were found)
         if command == "scan" and not args.dry_run:
             console.print(f"\n[bold yellow]TIP:[/bold yellow] Run [bold cyan]kubecuro fix {target}[/bold cyan] to auto-repair issues.")
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]⚠ Scan interrupted by user. Exiting...[/yellow]")
+        sys.exit(0)
+    except Exception as e:
+        log.exception(f"FATAL ERROR: {e}")
+        sys.exit(1)
+ 
