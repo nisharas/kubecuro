@@ -18,6 +18,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.logging import RichHandler
 from rich.markdown import Markdown
+from rich.text import Text
 
 # Internal Package Imports
 from kubecuro.healer import linter_engine
@@ -113,7 +114,8 @@ KubeCuro checks for **Placement Contradictions**:
 
 def show_help():
     help_console = Console()
-    # Full Block / ANSI Shadow Style
+    
+    # Block ASCII Art Header
     logo_ascii = r"""
  ██╗  ██╗██╗   ██╗██████╗ ███████╗ ██████╗██╗   ██╗██████╗  ██████╗ 
  ██║ ██╔╝██║   ██║██╔══██╗██╔════╝██╔════╝██║   ██║██╔══██╗██╔═══██╗
@@ -123,16 +125,17 @@ def show_help():
  ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ 
     """
     
-    # We use a custom color for the block letters (Cyan or Magenta looks best)
-    help_console.print(Panel(
-        f"[bold cyan]{logo_ascii}[/bold cyan]\n"
-        "   [bold magenta]❤️ KubeCuro[/bold magenta] | Kubernetes Logic Diagnostics & YAML Healer",
-        expand=False,
-        border_style="bright_black"
-    ))
-
+    # Styled text for the logo
+    styled_logo = Text(logo_ascii, style="bold cyan")
     
-    help_console.print(Panel("[bold green]❤️ KubeCuro[/bold green] | Kubernetes Logic Diagnostics & YAML Healer", expand=False))
+    # Branding Panel
+    help_console.print(Panel(
+        styled_logo,
+        title="[bold magenta]❤️ KubeCuro[/bold magenta] | Kubernetes Logic Diagnostics & YAML Healer",
+        subtitle="[italic white]v1.0.0[/italic white]",
+        border_style="bright_black",
+        expand=False
+    ))
     
     help_console.print("\n[bold yellow]Usage:[/bold yellow]")
     help_console.print("  kubecuro [command] [file_or_dir] [options]")
@@ -154,15 +157,15 @@ def show_help():
 
     help_console.print("\n[bold yellow]Extensive Examples:[/bold yellow]")
     help_console.print("  [dim]1. Scan a specific file for logic gaps:[/dim]")
-    help_console.print("     kubecuro scan deployment.yaml")
+    help_console.print("      kubecuro scan deployment.yaml")
     help_console.print("\n  [dim]2. Smart-Route (Automatic Scan if command is omitted):[/dim]")
-    help_console.print("     kubecuro ./manifests/")
+    help_console.print("      kubecuro ./manifests/")
     help_console.print("\n  [dim]3. Automatically fix API deprecations and syntax:[/dim]")
-    help_console.print("     kubecuro fix ./prod-cluster/")
+    help_console.print("      kubecuro fix ./prod-cluster/")
     help_console.print("\n  [dim]4. Preview fixes without touching the YAML files:[/dim]")
-    help_console.print("     kubecuro fix service.yaml --dry-run")
+    help_console.print("      kubecuro fix service.yaml --dry-run")
     help_console.print("\n  [dim]5. Understand why KubeCuro audits RBAC:[/dim]")
-    help_console.print("     kubecuro explain rbac")
+    help_console.print("      kubecuro explain rbac")
     
     help_console.print("\n[italic white]Architecture: x86_64 Linux (Static Binary)[/italic white]\n")
 
