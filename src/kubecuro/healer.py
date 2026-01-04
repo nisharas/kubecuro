@@ -19,7 +19,7 @@ try:
 except ImportError:
     from shield import Shield
 
-def linter_engine(file_path, apply_api_fixes=True, dry_run=False):
+def linter_engine(file_path, apply_api_fixes=True, dry_run=False, return_content=False):
     """
     1. Repairs broken YAML syntax (missing colons, tabs, etc.)
     2. Migrates deprecated API versions to stable ones using Shield's logic.
@@ -99,7 +99,8 @@ def linter_engine(file_path, apply_api_fixes=True, dry_run=False):
             return False # No healing needed, file is already healthy
         
         # --- Phase 3: Commit Logic ---
-        # If not a dry run, commit the changes to the file
+        if return_content:
+            return healed_final # Give the text back to the caller (main.py)
         if not dry_run:
             with open(file_path, 'w') as f:
                 f.write(healed_final)
