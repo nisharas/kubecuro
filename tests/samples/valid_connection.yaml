@@ -1,0 +1,23 @@
+# Exhibit B: A Perfect Connection
+apiVersion: v1
+kind: Service
+metadata:
+  name: healthy-service
+spec:
+  selector:
+    app: kubecuro-app   # <--- MATCH
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: healthy-pod
+  labels:
+    app: kubecuro-app   # <--- MATCH
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.21
