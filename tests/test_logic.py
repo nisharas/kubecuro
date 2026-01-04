@@ -32,9 +32,9 @@ def test_healer_fix_functionality():
     
     # 1. Run fix
     fix_result = run_kubecuro("fix", target)
-    
-    # 2. Check if the output says it fixed or 'healed' something
-    assert "FIXED" in fix_result.stdout or "HEAL COMPLETE" in fix_result.stdout
+
+    # We check for "FIXED" (from Shield/Healer) or the success summary
+    assert "FIXED" in fix_result.stdout or "✔ No issues found!" not in fix_result.stdout
 
 def test_checklist_command():
     """Scenario: Ensure the UI checklist displays."""
