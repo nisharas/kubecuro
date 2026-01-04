@@ -1,10 +1,12 @@
-apiVersion: extensions/v1beta1
-kind: Deployment
+apiVersion: extensions/v1beta1 # This is the "Bait" - highly deprecated
+kind: Ingress
 metadata:
-  name: old-deployment
+  name: deprecated-ingress
 spec:
-  template:
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:latest
+  rules:
+  - http:
+      paths:
+      - path: /
+        backend:
+          serviceName: web-service
+          servicePort: 80
