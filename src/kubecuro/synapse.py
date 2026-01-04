@@ -9,7 +9,7 @@ from typing import List
 from ruamel.yaml import YAML
 
 from .models import AuditIssue
-from .shield import Shield
+
 
 class Synapse:
     def __init__(self):
@@ -49,7 +49,7 @@ class Synapse:
                 # --- 2. Workloads (Producers) ---
                 if kind in ['Deployment', 'Pod', 'StatefulSet', 'DaemonSet']:
                     self.workload_docs.append(doc)
-                    template = spec.get('template', {}) if kind != 'Pod' else doc
+                    template = spec.get('template', {}) if kind in ['Deployment', 'StatefulSet', 'DaemonSet'] else doc
                     # Safety guard: Ensure labels is always a dict
                     labels = template.get('metadata', {}).get('labels') or {}
                     pod_spec = template.get('spec', {}) if kind != 'Pod' else spec
@@ -101,6 +101,7 @@ class Synapse:
             pass
 
     def audit(self) -> List[AuditIssue]:
+        from .shield import Shield
         """Performs deep cross-resource analysis and returns issues."""
         results = []
         shield = Shield()
@@ -165,15 +166,16 @@ class Synapse:
                             source="Synapse"
                         ))
 
-        # --- AUDIT: HPA Deep Logic (Delegated to Shield) ---
+        # In Synapse.audit()
         for hpa in self.hpas:
             hpa_errors = shield.audit_hpa(hpa['doc'], self.workload_docs)
             for err in hpa_errors:
                 results.append(AuditIssue(
-                    code="HPA_LOGIC", 
-                    severity="🔴 HIGH", 
+                    code=err['code'], # Extract from dict
+                    severity=err['severity'], 
                     file=hpa['file'], 
-                    message=err, 
+                    message=err['msg'], 
+                    line=err.get('line'),
                     fix="Add CPU/Memory resource requests to the target Deployment.",
                     source="Shield"
                 ))
@@ -190,5 +192,23 @@ class Synapse:
                         fix="Add the port to the container's ports list.",
                         source="Synapse"
                     ))
+
+        # --- AUDIT: Service Port Alignment ---
+        for svc in self.consumers:
+            # Find matching producers
+            for p in self.producers:
+                if p['namespace'] == svc['namespace'] and svc['selector'].items() <= p['labels'].items():
+                    for s_port in svc['ports']:
+                        t_port = s_port.get('targetPort')
+                        # Check if targetPort (int or name) exists in the producer's ports
+                        if t_port and t_port not in p['ports']:
+                            results.append(AuditIssue(
+                                code="PORT_MISMATCH",
+                                severity="🟠 MED",
+                                file=svc['file'],
+                                message=f"Service '{svc['name']}' targetPort '{t_port}' not found in workload '{p['name']}'.",
+                                fix=f"Expose port {t_port} in {p['kind']} '{p['name']}' container ports.",
+                                source="Synapse"
+                            ))
 
         return results
