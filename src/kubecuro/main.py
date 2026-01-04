@@ -255,29 +255,29 @@ def run():
                     source="Healer"
                 ))
 
-
     # 3. SHIELD STAGE
     for doc in syn.all_docs:
         shield_findings = shield.scan(doc, all_docs=syn.all_docs)
         for finding in shield_findings:
-            # Check if we already fixed this in the Healer stage
             fname = str(doc.get('_origin_file', 'unknown'))
-            already_fixed = any(i.file == fname and i.code == "FIXED" for i in all_issues)
             
-            # If we are in 'fix' mode and it's already patched, skip the warning
-            if command == "fix" and already_fixed and finding['code'] == "API_DEPRECATED":
-                continue
+            # Simplified Logic:
+            # During 'scan', we ALWAYS show findings.
+            # During 'fix', we only show them if they aren't auto-fixed.
+            if command == "fix":
+                already_healed = any(i.file == fname and i.code == "FIXED" for i in all_issues)
+                if already_healed and finding['code'] == "API_DEPRECATED":
+                    continue
 
-            # Add to report
             all_issues.append(AuditIssue(
-                code=str(finding['code']),
-                severity=str(finding['severity']),
+                code=str(finding.get('code', 'SHIELD_ERR')),
+                severity=str(finding.get('severity', '🟠 MED')),
                 file=fname,
-                message=str(finding['msg']),
+                message=str(finding.get('msg', 'Logic violation detected')),
                 fix="Check 'kubecuro explain'",
                 source="Shield"
             ))
-    
+            
     # 4. SYNAPSE AUDIT
     synapse_issues = syn.audit()
     for issue in synapse_issues:
