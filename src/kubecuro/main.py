@@ -256,32 +256,27 @@ def run():
     if args.command == "explain":
         res = args.resource.lower() if args.resource else ""
         
-        # Scenario A: User points to a real file (e.g., kubecuro explain deployment.yaml)
+        # Scenario A: User points to a real file
         if os.path.exists(res):
-            # 1. Quickly scan the file to find the errors
             syn, shield = Synapse(), Shield()
             syn.scan_file(res)
             file_issues = []
+            
+            # 1. Collect ALL issues from ALL documents in the file first
             for doc in syn.all_docs:
                 findings = shield.scan(doc, all_docs=syn.all_docs)
                 for f in findings:
                     file_issues.append(AuditIssue(
-                        code=f['code'], severity=f['severity'], 
-                        file=res, message=f['msg'], line=f.get('line')
+                        code=f['code'], 
+                        severity=f['severity'], 
+                        file=res, 
+                        message=f['msg'], 
+                        line=f.get('line')
                     ))
             
-            # 2. Show the "Deep Dive" interactive view
-            with open(res, 'r') as f:
-                code = f.read()
-            syntax = Syntax(code, "yaml", theme="monokai", line_numbers=True)
-            console.print(Panel(f"🔍 [bold]Interactive Diagnosis:[/bold] {res}", style="blue"))
-            console.print(syntax)
-            
-            for issue in file_issues:
-                explanation = EXPLAIN_CATALOG.get(issue.code.lower(), issue.message)
-                title_str = f"📍 Line {issue.line}" if issue.line else "Logic Violation"
-                console.print(Panel(f"[bold red]ISSUE:[/bold red] {issue.code}\n[yellow]WHY:[/yellow] {explanation}", border_style="red"))
-            return
+            # 2. NOW show the UI once with all gathered issues
+            interactive_explain(res, file_issues)
+            return # This stops the script here so it doesn't run Scenario B
 
         # Scenario B: User asks for a general concept (e.g., kubecuro explain hpa)
         if res in EXPLAIN_CATALOG:
@@ -299,7 +294,13 @@ def run():
             console.print(f"[bold red]Error:[/bold red] Unrecognized input: '{unknown[0]}'"); sys.exit(1)
     
     if not target or not command:
-        console.print("[bold red]Error:[/bold red] Target path required."); show_help(); sys.exit(1)
+        # If no target provided, check if the user is just asking for help or version
+        if command in ["checklist", "version", "completion"]:
+            pass # These don't need a target
+        else:
+            console.print("[bold red]Error:[/bold red] Target path (file or directory) required.")
+            show_help()
+            sys.exit(1)
 
     # --- 3. CORE PIPELINE ---
     console.print(Panel(f"❤️ [bold white]KubeCuro {command.upper()}[/bold white]", style="bold magenta"))
@@ -378,25 +379,32 @@ def run():
         console.print(res_table)
 
         # Advanced Counters
-        ghosts   = sum(1 for i in all_issues if i.code == 'GHOST')
-        hpa_gaps = sum(1 for i in all_issues if i.code in ['HPA_LOGIC', 'HPA_MISSING_REQ'])
-        security = sum(1 for i in all_issues if i.code in ['RBAC_WILD', 'SEC_PRIVILEGED', 'RBAC_SECRET'])
-        api_rot  = sum(1 for i in all_issues if i.code == 'API_DEPRECATED')
-        repairs  = sum(1 for i in all_issues if i.code == 'FIXED')
-        remaining = len([i for i in all_issues if "FIXED" not in i.severity])
-        
+        ghosts    = sum(1 for i in all_issues if str(i.code).upper() == 'GHOST')
+        hpa_gaps  = sum(1 for i in all_issues if str(i.code).upper() in ['HPA_LOGIC', 'HPA_MISSING_REQ'])
+        security  = sum(1 for i in all_issues if any(x in str(i.code).upper() for x in ['RBAC', 'PRIVILEGED', 'SECRET']))
+        api_rot   = sum(1 for i in all_issues if str(i.code).upper() == 'API_DEPRECATED')
+        repairs   = sum(1 for i in all_issues if str(i.code).upper() == 'FIXED')
+        remaining = len([i for i in all_issues if "FIXED" not in str(i.severity).upper()])
+
+        # 2. Build the Visual Summary Panel
         sum_md = f"### 📈 Audit Summary\n"
-        sum_md += f"* **Security Risks:** {security}\n"
-        sum_md += f"* **Ghost Services:** {ghosts}\n"
-        sum_md += f"* **HPA Logic Gaps:** {hpa_gaps}\n"
-        sum_md += f"* **API Deprecations:** {api_rot}\n"
+        
+        # Helper to create a small text-based bar
+        def get_bar(count):
+            return "█" * count if count > 0 else "░"
+
+        sum_md += f"* **Security Risks:** {security}  [red]{get_bar(security)}[/red]\n"
+        sum_md += f"* **Ghost Services:** {ghosts}  [yellow]{get_bar(ghosts)}[/yellow]\n"
+        sum_md += f"* **HPA Logic Gaps:** {hpa_gaps}  [blue]{get_bar(hpa_gaps)}[/blue]\n"
+        sum_md += f"* **API Deprecations:** {api_rot}  [magenta]{get_bar(api_rot)}[/magenta]\n"
         
         if command == "fix":
             status_text = "REPAIRED" if not args.dry_run else "FIXABLE"
             sum_md += f"\n---\n**🛠️ {status_text}: {repairs}** | **⚠️ REMAINING: {remaining}**"
         else:
-            sum_md += f"* **Auto-Fixable:** {repairs}"
+            sum_md += f"* **Auto-Fixable:** {repairs} [green]{get_bar(repairs)}[/green]"
 
+        # 3. Dynamic Border Color
         all_sev = str([i.severity for i in all_issues])
         if "🔴" in all_sev or security > 0 or ghosts > 0:
             border_col = "red"
@@ -406,7 +414,7 @@ def run():
             border_col = "green"
 
         console.print(Panel(Markdown(sum_md), title="Final Audit Results", border_style=border_col))
-
+        
         if command == "fix" and not args.dry_run and repairs > 0:
             console.print(Panel("[bold green]✔ HEAL COMPLETE: Manifests are now stable.[/bold green]", border_style="bold green", expand=False))
         elif command == "scan" and (repairs > 0 or api_rot > 0):
