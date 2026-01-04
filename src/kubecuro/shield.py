@@ -1,12 +1,13 @@
 """
 --------------------------------------------------------------------------------
 AUTHOR:          Nishar A Sunkesala / FixMyK8s
-PURPOSE:          The Shield Engine: API Deprecation & Resource Stability Guard.
+PURPOSE:          The Shield Engine: API Deprecation, Resource Stability, 
+                  and RBAC Security Guard.
 --------------------------------------------------------------------------------
 """
 
 class Shield:
-    """The Stability Engine: Protects against outdated APIs and misconfigured HPA logic."""
+    """The Stability Engine: Protects against outdated APIs, insecure RBAC, and misconfigured HPA logic."""
     
     # Comprehensive Database of retired/deprecated APIs
     DEPRECATIONS = {
@@ -32,18 +33,43 @@ class Shield:
         "discovery.k8s.io/v1beta1": "discovery.k8s.io/v1"
     }
 
-    def check_version(self, doc: dict) -> str:
-        """Checks for retired API versions and suggests the modern replacement."""
+    def scan(self, doc: dict, all_docs: list = None) -> list:
+        """
+        The main entry point for the Shield Engine. 
+        Runs all security and stability checks against a document.
+        """
+        findings = []
         if not doc or not isinstance(doc, dict):
-            return None
+            return findings
+
+        # 1. API Version & Pod Security Checks
+        findings.extend(self.check_version_and_security(doc))
+        
+        # 2. RBAC Specific Security Checks
+        findings.extend(self.check_rbac_security(doc))
+        
+        # 3. HPA Logic Cross-Reference (Requires all docs in the directory)
+        if all_docs:
+            findings.extend(self.audit_hpa(doc, all_docs))
             
+        return findings
+
+    def check_version_and_security(self, doc: dict) -> list:
+        """Checks for retired API versions and Container Privileged mode."""
+        findings = []
         api = doc.get('apiVersion')
         kind = doc.get('kind', 'Object')
+        name = doc.get('metadata', {}).get('name', 'unknown')
         
+        # --- API Deprecation Check ---
         if api in self.DEPRECATIONS:
             mapping = self.DEPRECATIONS[api]
             better = mapping.get(kind, mapping.get("default")) if isinstance(mapping, dict) else mapping
-            return f"🛡️ [DEPRECATED API] {kind} uses '{api}'. Upgrade to '{better}'."
+            findings.append({
+                "severity": "🟡 API",
+                "code": "API_DEPRECATED",
+                "msg": f"🛡️ {kind} '{name}' uses '{api}'. Upgrade to '{better}'."
+            })
         
         # --- Security Check: Privileged Mode ---
         if kind in ['Deployment', 'Pod', 'StatefulSet', 'DaemonSet']:
@@ -54,31 +80,60 @@ class Shield:
             
             for c in containers:
                 if c.get('securityContext', {}).get('privileged'):
-                    return f"🚨 [SECURITY RISK] Container '{c.get('name')}' is running in Privileged mode."
+                    findings.append({
+                        "severity": "🔴 HIGH",
+                        "code": "SEC_PRIVILEGED",
+                        "msg": f"🚨 Security Risk: Container '{c.get('name')}' in {kind} '{name}' is Privileged."
+                    })
+        return findings
 
-        return None
+    def check_rbac_security(self, resource: dict) -> list:
+        """Audits RBAC for wildcard permissions and secret access."""
+        findings = []
+        kind = resource.get("kind")
+        name = resource.get('metadata', {}).get('name', 'unknown')
+        rules = resource.get("rules", [])
+    
+        if kind in ["Role", "ClusterRole"]:
+            for rule in rules:
+                verbs = rule.get("verbs", [])
+                resources = rule.get("resources", [])
+
+                # Global Wildcards
+                if "*" in verbs and "*" in resources:
+                    findings.append({
+                        "severity": "🔴 HIGH",
+                        "code": "RBAC_WILD",
+                        "msg": f"🚨 Critical Security Risk: {kind} '{name}' uses global wildcards (*)."
+                    })
+                
+                # Broad Secret Access
+                elif "secrets" in resources and any(v in verbs for v in ["*", "get", "list", "watch"]):
+                     findings.append({
+                        "severity": "🟠 MED",
+                        "code": "RBAC_SECRET",
+                        "msg": f"🛡️ Security Warning: {kind} '{name}' allows read access to Secrets."
+                    })
+        return findings
 
     def audit_hpa(self, hpa_doc: dict, workload_docs: list) -> list:
         """
-        Validates HorizontalPodAutoscaler logic.
-        Ensures the Target workload has the necessary resource requests.
+        Validates HPA logic against targeted workloads.
         """
-        issues = []
-        if hpa_doc.get('kind') != 'HorizontalPodAutoscaler':
-            return issues
+        findings = []
+        if hpa_doc.get('kind') != 'HorizontalPodAutoscalers' and hpa_doc.get('kind') != 'HorizontalPodAutoscaler':
+            return findings
 
         spec = hpa_doc.get('spec') or {}
         target_ref = spec.get('scaleTargetRef') or {}
         target_name = target_ref.get('name')
         
-        # Analyze Metrics block
-        metrics = spec.get('metrics') or []
-        target_cpu_util = spec.get('targetCPUUtilizationPercentage')
+        # Extract resource metrics to check
         resource_checks = []
-        
-        if target_cpu_util:
+        if spec.get('targetCPUUtilizationPercentage'):
             resource_checks.append('cpu')
             
+        metrics = spec.get('metrics') or []
         for m in metrics:
             if m.get('type') == 'Resource':
                 res_data = m.get('resource') or {}
@@ -87,9 +142,9 @@ class Shield:
                     resource_checks.append(res_name)
         
         if not resource_checks:
-            return issues
+            return findings
 
-        # Match target workload from the bundle
+        # Find the target workload (Deployment/StatefulSet) in the bundle
         target_workload = next((w for w in workload_docs if w.get('metadata', {}).get('name') == target_name), None)
         
         if target_workload:
@@ -104,8 +159,10 @@ class Shield:
                     res_config = c.get('resources') or {}
                     requests = res_config.get('requests') or {}
                     if res_to_check not in requests:
-                        issues.append(
-                            f"📈 [HPA LOGIC ERROR] Scales on {res_to_check}, but '{target_name}' lacks {res_to_check} requests."
-                        )
+                        findings.append({
+                            "severity": "🔴 HIGH",
+                            "code": "HPA_MISSING_REQ",
+                            "msg": f"📈 HPA Logic Error: Scales on {res_to_check}, but '{target_name}' lacks {res_to_check} requests."
+                        })
         
-        return issues
+        return findings
