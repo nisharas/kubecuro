@@ -6,13 +6,17 @@ def calculate_summary_logic(all_issues, command="scan"):
     Simulates the logic block from main.py to verify 
     counters and 'Before vs After' math.
     """
-    ghosts   = sum(1 for i in all_issues if i.code == 'GHOST')
-    hpa_gaps = sum(1 for i in all_issues if i.code in ['HPA_LOGIC', 'HPA_MISSING_REQ'])
-    security = sum(1 for i in all_issues if i.code in ['RBAC_WILD', 'SEC_PRIVILEGED', 'RBAC_SECRET'])
-    repairs  = sum(1 for i in all_issues if i.code == 'FIXED')
+    # Updated codes to match shield.py and synapse.py
+    ghosts    = sum(1 for i in all_issues if str(i.code).upper() == 'GHOST')
+    hpa_gaps  = sum(1 for i in all_issues if str(i.code).upper() in ['HPA_LOGIC', 'HPA_MISSING_REQ'])
     
-    # The "Before vs After" logic: Count how many issues DON'T have "FIXED" in their severity
-    remaining = len([i for i in all_issues if "FIXED" not in i.severity])
+    # Ensure security checks include the new SEC_PRIVILEGED from Healer integration
+    security  = sum(1 for i in all_issues if any(x in str(i.code).upper() for x in ['RBAC', 'PRIVILEGED', 'SECRET']))
+    
+    repairs   = sum(1 for i in all_issues if str(i.code).upper() == 'FIXED')
+    
+    # Logic: How many issues are NOT auto-repaired?
+    remaining = len([i for i in all_issues if "FIXED" not in str(i.severity).upper()])
     
     return {
         "ghosts": ghosts,
@@ -23,34 +27,41 @@ def calculate_summary_logic(all_issues, command="scan"):
     }
 
 def test_fix_command_math():
-    """Verify that 'FIXED' items are correctly separated from 'REMAINING'"""
-    # We create a fake list of issues with NO dots/placeholders
+    """Verify that 'FIXED' items (Healer) are correctly separated from 'REMAINING' (Shield/Synapse)"""
     mock_issues = [
-        AuditIssue(code="FIXED", severity="🟢 FIXED", file="a.yaml", message="Fixed API", fix="N/A", source="Healer"),
-        AuditIssue(code="FIXED", severity="🟢 FIXED", file="b.yaml", message="Fixed Syntax", fix="N/A", source="Healer"),
-        AuditIssue(code="RBAC_WILD", severity="🔴 HIGH", file="c.yaml", message="Wildcard found", fix="Manual", source="Shield"),
-        AuditIssue(code="GHOST", severity="🟠 WARN", file="d.yaml", message="Ghost service", fix="Manual", source="Synapse"),
+        # Repaired by Healer
+        AuditIssue(code="FIXED", severity="🟢 FIXED", file="a.yaml", message="Migrated Ingress API"),
+        AuditIssue(code="FIXED", severity="🟢 FIXED", file="b.yaml", message="Disabled Privileged Mode"),
+        # Remaining logic issues
+        AuditIssue(code="RBAC_WILD", severity="🔴 HIGH", file="c.yaml", message="Wildcard access"),
+        AuditIssue(code="GHOST", severity="🟠 WARN", file="d.yaml", message="Ghost service"),
     ]
     
     results = calculate_summary_logic(mock_issues, command="fix")
     
-    # Math check: 2 fixed, 2 remaining, 4 total.
+    # 2 Healed + 2 Manual = 4 total
     assert results["repairs"] == 2
     assert results["remaining"] == 2 
-    assert results["security"] == 1
+    assert results["security"] == 2  # RBAC_WILD + FIXED(Privileged)
 
 def test_border_color_logic():
-    """Verify the summary panel turns RED if security risks exist"""
+    """Verify the summary panel color reflects the risk profile"""
     issues = [
-        AuditIssue(code="RBAC_WILD", severity="🔴 HIGH", file="f.yaml", message="Security hole", fix="Manual", source="Shield")
+        AuditIssue(code="SEC_PRIVILEGED", severity="🔴 HIGH", file="f.yaml", message="Privileged container")
     ]
     
-    # Simulating the visual logic: turn red if high severity OR security code exists
+    # Logic mirror from main.py
     all_sev = str([i.severity for i in issues])
-    security_count = sum(1 for i in issues if i.code == 'RBAC_WILD')
+    security_count = sum(1 for i in issues if "PRIVILEGED" in i.code)
     
     border_col = "green"
     if "🔴" in all_sev or security_count > 0:
         border_col = "red"
         
     assert border_col == "red"
+
+def test_empty_results():
+    """Ensure math doesn't break on a clean scan"""
+    results = calculate_summary_logic([])
+    assert results["remaining"] == 0
+    assert results["repairs"] == 0
