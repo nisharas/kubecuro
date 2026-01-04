@@ -11,6 +11,8 @@ import logging
 import argparse
 import platform
 import difflib
+import time
+
 from typing import List
 from argcomplete.completers import FilesCompleter
 
@@ -21,6 +23,7 @@ from rich.panel import Panel
 from rich.logging import RichHandler
 from rich.markdown import Markdown
 from rich.syntax import Syntax
+from rich.progress_bar import ProgressBar
 
 # Internal Package Imports
 from kubecuro.healer import linter_engine
@@ -97,6 +100,13 @@ KubeCuro audits the **Self-Healing** parameters:
 1. **Port Mapping**: Ensures httpGet.port or tcpSocket.port is defined.
 2. **Timing Logic**: Flags probes where timeoutSeconds > periodSeconds.
 """,
+    "ingress_port_mismatch": """
+# 🌐 Ingress Port Mismatch
+The **Traffic Path** is broken.
+An Ingress acts as a router, but it is trying to send traffic to a port that the Service is not listening on.
+**Result:** Users will see a `503 Service Unavailable` or `502 Bad Gateway`.
+**Fix:** Update the `service.port.number` in your Ingress to match one of the `ports.port` values in your Service manifest.
+""",
     "scheduling": """
 # 🏗️ Scheduling & Affinity Audit
 KubeCuro checks for **Placement Contradictions**:
@@ -107,7 +117,6 @@ KubeCuro checks for **Placement Contradictions**:
 
 def show_help():
     help_console = Console()
-    # logo_ascii must be absolutely clean of hidden Unicode spaces
     logo_ascii = r"""
  ██╗  ██╗██╗   ██╗██████╗ ███████╗ ██████╗██╗   ██╗██████╗  ██████╗ 
  ██║ ██╔╝██║   ██║██╔══██╗██╔════╝██╔════╝██║   ██║██╔══██╗██╔═══██╗
@@ -141,6 +150,7 @@ def show_help():
     opt_table.add_row("  -h, --help", "Show this help message and exit")
     opt_table.add_row("  -v, --version", "Print version and architecture information")
     opt_table.add_row("  --dry-run", "Show fixes without modifying files (use with 'fix')")
+    opt_table.add_row("  -y, --yes", "Skip confirmation prompts (Auto-fix)")
     help_console.print(opt_table)
 
     help_console.print("\n[bold yellow]Examples:[/bold yellow]")
@@ -170,20 +180,18 @@ def show_checklist():
     console.print(table)
 
 def interactive_explain(target_file, issues):
+    """Provides a high-fidelity, colorful breakdown of a file's logic errors and proposed fixes."""
     with open(target_file, 'r') as f:
         original_code = f.read()
 
-    # 1. Show the Current Code
-    syntax = Syntax(original_code, "yaml", theme="monokai", line_numbers=True)
-    console.print(Panel(f"🔍 [bold]Deep Dive:[/bold] {target_file}", style="blue"))
-    console.print(syntax)
+    # --- Header ---
+    console.print(Panel(
+        f"🔍 [bold white]Deep Dive Analysis:[/bold white] [cyan]{target_file}[/cyan]", 
+        style="bold blue", 
+        expand=True
+    ))
 
-    # 2. Generate a "Proposed Fix" using the Healer Engine
-    # We run the linter in memory (dry_run=True) to see the result
-    from kubecuro.healer import linter_engine
-    
-    # We read the file again to simulate what the fix would look like
-    # Note: This is a simplified founder-friendly approach
+    # --- 1. Proposed Fix (The Diff) ---
     fixed_code = linter_engine(target_file, dry_run=True, return_content=True)
 
     if fixed_code and fixed_code != original_code:
@@ -191,35 +199,72 @@ def interactive_explain(target_file, issues):
             original_code.splitlines(),
             fixed_code.splitlines(),
             fromfile="Current",
-            tofile="Fixed",
+            tofile="Healed",
             lineterm=""
         )
         diff_text = "\n".join(list(diff))
-        if diff_text:
-            console.print(Panel(
-                Syntax(diff_text, "diff", theme="monokai"),
-                title="✨ Proposed Auto-Fix",
-                border_style="green"
-            ))
-
-    # 3. Show the Logic Reasons
-    for issue in issues:
-        explanation = EXPLAIN_CATALOG.get(issue.code.lower(), issue.message)
         
-        # Grab line number if available
-        line_info = getattr(issue, 'line', None)
-        title_str = f"📍 Line {line_info}" if line_info else "Logic Violation"
+        if diff_text:
+            diff_syntax = Syntax(diff_text, "diff", theme="monokai", background_color="default")
+            console.print(Panel(
+                diff_syntax,
+                title="✨ [bold green]PROPOSED AUTO-REPAIR[/bold green]",
+                subtitle="[dim]Green (+) = Fixed | Red (-) = Deprecated/Broken[/dim]",
+                border_style="green",
+                padding=(1, 2)
+            ))
+    else:
+        console.print("[dim italic]No syntax or API repairs suggested for this file.[/dim italic]\n")
 
-        console.print(Panel(
-            f"[bold red]ISSUE:[/bold red] {issue.code}\n[yellow]REASON:[/yellow] {explanation}",
-            title=title_str,
-            title_align="left",
-            border_style="red"
-        ))
+    # --- 2. The Logic Violation Breakdown ---
+    if issues:
+        logic_table = Table(title="🧠 Logic Violation Breakdown", box=None, header_style="bold magenta")
+        logic_table.add_column("Location", style="cyan", justify="center")
+        logic_table.add_column("Rule ID", style="bold red")
+        logic_table.add_column("Deep Explanation", style="white")
 
+        for issue in issues:
+            raw_explanation = EXPLAIN_CATALOG.get(issue.code.lower(), issue.message)
+            line_str = f"Line {issue.line}" if hasattr(issue, 'line') and issue.line else "Global"
+            explanation = Markdown(raw_explanation) if "#" in str(raw_explanation) else raw_explanation
+            logic_table.add_row(line_str, issue.code, explanation)
+        
+        console.print(logic_table)
+    
+    # --- 3. Optional Source Preview ---
+    if console.confirm("\nView full source with line numbers?", default=False):
+        syntax = Syntax(original_code, "yaml", theme="monokai", line_numbers=True)
+        console.print(Panel(syntax, title="📄 Source Code Preview", border_style="dim"))
+
+def show_resolution_guide(issues):
+    """Prints a manual resolution guide for issues that couldn't be auto-fixed."""
+    guide_table = Table(title="\n📘 Manual Resolution Guide", header_style="bold magenta", box=None)
+    guide_table.add_column("Issue Type", style="cyan", width=20)
+    guide_table.add_column("Action Required", style="white")
+
+    codes = set(str(i.code).upper() for i in issues)
+
+    if "GHOST" in codes:
+        guide_table.add_row(
+            "👻 Ghost Service", 
+            "The Service selector doesn't match any Pod labels. [bold yellow]Fix:[/bold yellow] Align `spec.selector` in your Service with `spec.template.metadata.labels` in your Deployment."
+        )
+    if "HPA_MISSING_REQ" in codes or "HPA_LOGIC" in codes:
+        guide_table.add_row(
+            "📈 HPA Gap", 
+            "HPA cannot scale without resource requests. [bold yellow]Fix:[/bold yellow] Add `resources.requests.cpu` or `memory` to your container spec."
+        )
+    if any("RBAC" in c for c in codes):
+        guide_table.add_row(
+            "🔑 RBAC Risk", 
+            "Over-privileged service account detected. [bold yellow]Fix:[/bold yellow] Remove wildcards ('*') from your Role/ClusterRole and use specific resources."
+        )
+
+    if guide_table.row_count > 0:
+        console.print(guide_table)
 
 def run():
-    # Asset Integrity
+    start_time = time.time() 
     logo_path = resource_path("assets/Kubecuro Logo.png")
     if not os.path.exists(logo_path):
         log.debug(f"⚠️ UI Asset missing at {logo_path}")
@@ -228,6 +273,7 @@ def run():
     parser.add_argument("-v", "--version", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("-y", "--yes", action="store_true", help="Auto-accept all fixes without prompting")
     
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("scan").add_argument("target", nargs="?")
@@ -235,7 +281,6 @@ def run():
     subparsers.add_parser("checklist")
     subparsers.add_parser("version")
     
-    # 1. Define 'explain'
     explain_p = subparsers.add_parser("explain")
     explain_p.add_argument(
         "resource", 
@@ -244,14 +289,10 @@ def run():
         help="Resource keyword (hpa, rbac, etc.) or path to a YAML file"
     )
 
-    # 2. Define 'completion'
     subparsers.add_parser("completion").add_argument("shell", choices=["bash", "zsh"])
 
-    # 3. SINGLE Autocomplete call with the validator 
-    # This validator=lambda... is the secret that allows BOTH choices AND files
     argcomplete.autocomplete(parser, validator=lambda sig, val: True)
 
-    # 4. Finally, parse the arguments
     args, unknown = parser.parse_known_args()
     
     # --- 1. PRIORITY ROUTING ---
@@ -276,13 +317,12 @@ def run():
     if args.command == "explain":
         res = args.resource.lower() if args.resource else ""
         
-        # Scenario A: User points to a real file
         if os.path.exists(res):
             syn, shield = Synapse(), Shield()
             syn.scan_file(res)
             file_issues = []
             
-            # 1. Collect ALL issues from ALL documents in the file first
+            # 1. Collect Shield Findings
             for doc in syn.all_docs:
                 findings = shield.scan(doc, all_docs=syn.all_docs)
                 for f in findings:
@@ -291,14 +331,20 @@ def run():
                         severity=f['severity'], 
                         file=res, 
                         message=f['msg'], 
-                        line=f.get('line')
+                        line=f.get('line'),
+                        source="Shield"
                     ))
             
-            # 2. NOW show the UI once with all gathered issues
+            # 2. Collect Synapse Findings
+            synapse_findings = syn.audit()
+            for sf in synapse_findings:
+                # Only include if it belongs to this specific file
+                if sf.file == os.path.basename(res):
+                    file_issues.append(sf)
+            
             interactive_explain(res, file_issues)
-            return # This stops the script here so it doesn't run Scenario B
+            return
 
-        # Scenario B: User asks for a general concept (e.g., kubecuro explain hpa)
         if res in EXPLAIN_CATALOG:
             console.print(Panel(Markdown(EXPLAIN_CATALOG[res]), title=f"Logic: {res}", border_style="green"))
         else:
@@ -314,9 +360,8 @@ def run():
             console.print(f"[bold red]Error:[/bold red] Unrecognized input: '{unknown[0]}'"); sys.exit(1)
     
     if not target or not command:
-        # If no target provided, check if the user is just asking for help or version
         if command in ["checklist", "version", "completion"]:
-            pass # These don't need a target
+            pass 
         else:
             console.print("[bold red]Error:[/bold red] Target path (file or directory) required.")
             show_help()
@@ -334,24 +379,52 @@ def run():
     with console.status(f"[bold green]Processing {len(files)} files...") as status:
         for f in files:
             fname = os.path.basename(f)
-            
-            # 1. Load and Scan with Synapse
             syn.scan_file(f) 
             
-            # 2. Healer Check
             effective_dry = True if command == "scan" else args.dry_run
-            if linter_engine(f, dry_run=effective_dry):
+            
+            if command == "fix" and not args.dry_run:
+                fixed_content = linter_engine(f, dry_run=True, return_content=True)
+                with open(f, 'r') as original:
+                    original_content = original.read()
+                
+                if fixed_content and fixed_content != original_content:
+                    console.print(f"\n[bold yellow]🛠️ Proposed fix for {fname}:[/bold yellow]")
+                    diff = difflib.unified_diff(
+                        original_content.splitlines(),
+                        fixed_content.splitlines(),
+                        fromfile="current", tofile="proposed", lineterm=""
+                    )
+                    console.print(Syntax("\n".join(list(diff)), "diff", theme="monokai"))
+                    
+                    if getattr(args, 'yes', False):
+                        linter_engine(f, dry_run=False)
+                        msg = "[bold green]FIXED:[/bold green] Applied repairs (Auto-approved)."
+                    else:
+                        confirm = console.input(f"[bold cyan]Apply this fix to {fname}? (y/N): [/bold cyan]")
+                        if confirm.lower() == 'y':
+                            linter_engine(f, dry_run=False)
+                            msg = "[bold green]FIXED:[/bold green] Applied API and syntax repairs."
+                        else:
+                            msg = "[bold yellow]SKIPPED:[/bold yellow] User declined the fix."
+                else:
+                    msg = "No repairs needed."
+            else:
+                has_changes = linter_engine(f, dry_run=True)
+                msg = "[bold green]API UPGRADE:[/bold green] networking.k8s.io/v1beta1 → v1" if has_changes else None
+            
+            if msg:
                 all_issues.append(AuditIssue(
-                    code="FIXED", severity="🟡 WOULD FIX" if effective_dry else "🟢 FIXED",
-                    file=fname, message="Repaired YAML syntax/API versioning.", source="Healer"
+                    code="FIXED", 
+                    severity="🟢 FIXED" if command == "fix" and not effective_dry else "🟡 WOULD FIX",
+                    file=fname, 
+                    message=msg,
+                    source="Healer"
                 ))
 
-            # 3. Shield Check (Run immediately while we have the context)
-            # We look at the docs just added to synapse for this specific file
             current_docs = [d for d in syn.all_docs if d.get('_origin_file') == f or len(files) == 1]
             for doc in current_docs:
                 for finding in shield.scan(doc, all_docs=syn.all_docs):
-                    # Filter out already-fixed deprecations in 'fix' mode
                     if command == "fix" and finding['code'] == "API_DEPRECATED":
                         if any(i.file == fname and i.code == "FIXED" for i in all_issues):
                             continue
@@ -365,10 +438,8 @@ def run():
                         line=finding.get('line')
                     ))
             
-    # 4. SYNAPSE AUDIT
     synapse_issues = syn.audit()
     for issue in synapse_issues:
-        # Ensure every field is a string to prevent Rich rendering errors
         issue.code = str(issue.code)
         issue.severity = str(issue.severity)
         issue.message = str(issue.message)
@@ -378,62 +449,76 @@ def run():
     if not all_issues:
         console.print("\n[bold green]✔ No issues found![/bold green]")
     else:
-        # 1. Create the beautiful Rich table
         res_table = Table(title="\n📊 Diagnostic Report", header_style="bold cyan", box=None)
-        res_table.add_column("Severity") 
-        res_table.add_column("File", style="dim") 
+        res_table.add_column("Severity", width=12) 
+        res_table.add_column("Location", style="dim") 
         res_table.add_column("Message")
         
         for i in all_issues:
-            # Add to Rich Table
             c = "red" if "🔴" in i.severity else "orange3" if "🟠" in i.severity else "green"
-            # Create a nice "file:line" string
-            loc = f"{i.file}:{i.line}" if getattr(i, 'line', None) else i.file
+            line_info = f":{i.line}" if hasattr(i, 'line') and i.line else ""
+            loc = f"{i.file}{line_info}"
             res_table.add_row(f"[{c}]{i.severity}[/{c}]", loc, i.message)
             
-            # 2. TEST SAFETY: Print raw text if we are in a test environment
-            # This ensures pytest 'sees' the strings even if Rich formatting hides them
             if "PYTEST_CURRENT_TEST" in os.environ:
                 print(f"AUDIT_LOG: {i.code} | {i.severity} | {i.message}")
 
         console.print(res_table)
 
-        # Advanced Counters
         ghosts    = sum(1 for i in all_issues if str(i.code).upper() == 'GHOST')
         hpa_gaps  = sum(1 for i in all_issues if str(i.code).upper() in ['HPA_LOGIC', 'HPA_MISSING_REQ'])
         security  = sum(1 for i in all_issues if any(x in str(i.code).upper() for x in ['RBAC', 'PRIVILEGED', 'SECRET']))
         api_rot   = sum(1 for i in all_issues if str(i.code).upper() == 'API_DEPRECATED')
         repairs   = sum(1 for i in all_issues if str(i.code).upper() == 'FIXED')
-        remaining = len([i for i in all_issues if "FIXED" not in str(i.severity).upper()])
 
-        # 2. Build the Visual Summary Panel
-        sum_md = f"### 📈 Audit Summary\n"
-        
-        # Helper to create a small text-based bar
-        def get_bar(count):
-            return "█" * count if count > 0 else "░"
-
-        sum_md += f"* **Security Risks:** {security}  [red]{get_bar(security)}[/red]\n"
-        sum_md += f"* **Ghost Services:** {ghosts}  [yellow]{get_bar(ghosts)}[/yellow]\n"
-        sum_md += f"* **HPA Logic Gaps:** {hpa_gaps}  [blue]{get_bar(hpa_gaps)}[/blue]\n"
-        sum_md += f"* **API Deprecations:** {api_rot}  [magenta]{get_bar(api_rot)}[/magenta]\n"
-        
-        if command == "fix":
-            status_text = "REPAIRED" if not args.dry_run else "FIXABLE"
-            sum_md += f"\n---\n**🛠️ {status_text}: {repairs}** | **⚠️ REMAINING: {remaining}**"
-        else:
-            sum_md += f"* **Auto-Fixable:** {repairs} [green]{get_bar(repairs)}[/green]"
-
-        # 3. Dynamic Border Color
         all_sev = str([i.severity for i in all_issues])
-        if "🔴" in all_sev or security > 0 or ghosts > 0:
+        if security > 0 or ghosts > 0 or "🔴" in all_sev:
             border_col = "red"
-        elif "🟠" in all_sev or "🟡" in all_sev:
+        elif hpa_gaps > 0 or "🟠" in all_sev:
             border_col = "yellow"
         else:
             border_col = "green"
 
-        console.print(Panel(Markdown(sum_md), title="Final Audit Results", border_style=border_col))
+        elapsed_time = time.time() - start_time
+        unhealthy_files = set()
+        for i in all_issues:
+            if "🔴" in i.severity:
+                was_fixed = any(fix.file == i.file and fix.code == "FIXED" for fix in all_issues)
+                if not was_fixed: unhealthy_files.add(i.file)
+            if i.code in ["GHOST", "HPA_LOGIC", "HPA_MISSING_REQ"]:
+                unhealthy_files.add(i.file)
+
+        success_rate = ((len(files) - len(unhealthy_files)) / len(files)) * 100
+        if len(unhealthy_files) > 0 and success_rate > 99.9: success_rate = 99.9
+
+        summary_table = Table(show_header=False, box=None, padding=(0, 2))
+        summary_table.add_row("📁 [bold white]Files Scanned[/bold white]", str(len(files)))
+        summary_table.add_row("⏱️  [bold cyan]Time Elapsed[/bold cyan]", f"{elapsed_time:.2f}s")
+        summary_table.add_section()
+        summary_table.add_row("🛡️  [bold red]Security Risks[/bold red]", str(security))
+        summary_table.add_row("👻  [bold yellow]Ghost Services[/bold yellow]", str(ghosts))
+        summary_table.add_row("📈  [bold blue]HPA Logic Gaps[/bold blue]", str(hpa_gaps))
+        summary_table.add_section()
+        summary_table.add_row("🛠️  [bold green]Auto-Fixable[/bold green]", f"[bold green]{repairs}[/bold green]")
+        
+        rate_color = "green" if success_rate > 80 else "yellow" if success_rate > 50 else "red"
+        status_emoji = "🎯" if success_rate == 100 else "⚠️"
+        summary_table.add_row(f"{status_emoji} [bold white]Final Health Score[/bold white]", f"[{rate_color}]{success_rate:.1f}%[/{rate_color}]")
+        
+        if all_issues:
+            sec_pct = (security / len(all_issues)) * 100
+            console.print(f"\n[bold white]Security Density:[/bold white] {sec_pct:.1f}%")
+
+        footer = None
+        if command == "fix":
+            status_text = "REPAIRED" if not args.dry_run else "FIXABLE"
+            footer = f"[bold white]{status_text}[/bold white]: {repairs} changes applied"
+
+        console.print(Panel(summary_table, title="[bold white]Final Audit Results[/bold white]", border_style=border_col, subtitle=footer, expand=False))
+
+        unfixed_issues = [i for i in all_issues if i.code != "FIXED"]
+        if unfixed_issues:
+            show_resolution_guide(unfixed_issues)
         
         if command == "fix" and not args.dry_run and repairs > 0:
             console.print(Panel("[bold green]✔ HEAL COMPLETE: Manifests are now stable.[/bold green]", border_style="bold green", expand=False))
