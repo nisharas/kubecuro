@@ -387,7 +387,7 @@ def run():
                 fixed_content = linter_engine(f, dry_run=True, return_content=True)
                 with open(f, 'r') as original:
                     original_content = original.read()
-                
+                      
                 if fixed_content and fixed_content != original_content:
                     console.print(f"\n[bold yellow]🛠️ Proposed fix for {fname}:[/bold yellow]")
                     diff = difflib.unified_diff(
@@ -396,17 +396,21 @@ def run():
                         fromfile="current", tofile="proposed", lineterm=""
                     )
                     console.print(Syntax("\n".join(list(diff)), "diff", theme="monokai"))
-                    
+                                    
                     if getattr(args, 'yes', False):
                         linter_engine(f, dry_run=False)
                         msg = "[bold green]FIXED:[/bold green] Applied repairs (Auto-approved)."
-                    else:
+                    elif sys.stdin.isatty():
+                        # Only prompt if we are in an interactive terminal
                         confirm = console.input(f"[bold cyan]Apply this fix to {fname}? (y/N): [/bold cyan]")
                         if confirm.lower() == 'y':
                             linter_engine(f, dry_run=False)
                             msg = "[bold green]FIXED:[/bold green] Applied API and syntax repairs."
                         else:
                             msg = "[bold yellow]SKIPPED:[/bold yellow] User declined the fix."
+                    else:
+                        # Non-interactive (CI/CD) and no -y flag provided
+                        msg = "[bold red]SKIPPED:[/bold red] Non-interactive environment. Use -y to auto-apply."
                 else:
                     msg = "No repairs needed."
             else:
