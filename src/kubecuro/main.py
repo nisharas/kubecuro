@@ -279,13 +279,23 @@ def run():
     if not all_issues:
         console.print("\n[bold green]✔ No issues found![/bold green]")
     else:
-        res_table = Table(title="\n📊 Diagnostic Report", header_style="bold cyan", box=None)
-        res_table.add_column("Severity") 
+        # Create table with clear settings
+        res_table = Table(title="\n📊 Diagnostic Report", header_style="bold cyan", box=None, show_header=True)
+        res_table.add_column("Severity", width=12) 
         res_table.add_column("File", style="dim") 
-        res_table.add_column("Message", overflow="fold")
+        res_table.add_column("Message")
+        
         for i in all_issues:
-            c = "red" if "🔴" in i.severity else "orange3" if "🟠" in i.severity else "green"
-            res_table.add_row(f"[{c}]{i.severity}[/{c}]", i.file, i.message)
+            # Ensure severity and message are clean strings for the table
+            sev_str = str(i.severity)
+            msg_str = str(i.message)
+            file_str = str(i.file)
+            
+            # Use color tags based on the emoji present
+            c = "red" if "🔴" in sev_str else "orange3" if "🟠" in sev_str else "green"
+            
+            # ADD ROW: Explicitly cast to string to prevent Rich rendering failures
+            res_table.add_row(f"[{c}]{sev_str}[/{c}]", file_str, msg_str)
         
         console.print(res_table)
 
