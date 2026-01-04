@@ -11,6 +11,7 @@ import logging
 import argparse
 import platform
 import difflib
+import rich
 from typing import List
 
 # UI and Logging Imports
@@ -165,6 +166,8 @@ def show_checklist():
     console.print(table)
 
 def run():
+    print(f"DEBUG: Running from {__file__}")
+    print(f"DEBUG: Rich version {rich.__version__} at {rich.__file__}")
     # Asset Integrity
     logo_path = resource_path("assets/Kubecuro Logo.png")
     if not os.path.exists(logo_path):
