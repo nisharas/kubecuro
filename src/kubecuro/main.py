@@ -19,6 +19,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.logging import RichHandler
 from rich.markdown import Markdown
+from rich.syntax import Syntax
 
 # Internal Package Imports
 from kubecuro.healer import linter_engine
@@ -159,6 +160,49 @@ def show_checklist():
     table.add_row("Synapse", "Cross-resource Ingress, ConfigMap, and STS checks")
     console.print(table)
 
+def interactive_explain(target_file, issues):
+    with open(target_file, 'r') as f:
+        original_code = f.read()
+
+    # 1. Show the Current Code
+    syntax = Syntax(original_code, "yaml", theme="monokai", line_numbers=True)
+    console.print(Panel(f"🔍 [bold]Deep Dive:[/bold] {target_file}", style="blue"))
+    console.print(syntax)
+
+    # 2. Generate a "Proposed Fix" using the Healer Engine
+    # We run the linter in memory (dry_run=True) to see the result
+    from kubecuro.healer import linter_engine
+    
+    # We read the file again to simulate what the fix would look like
+    # Note: This is a simplified founder-friendly approach
+    fixed_code = linter_engine(target_file, dry_run=True, return_content=True)
+
+    if fixed_code and fixed_code != original_code:
+        diff = difflib.unified_diff(
+            original_code.splitlines(),
+            fixed_code.splitlines(),
+            fromfile="Current",
+            tofile="Fixed",
+            lineterm=""
+        )
+        diff_text = "\n".join(list(diff))
+        if diff_text:
+            console.print(Panel(
+                Syntax(diff_text, "diff", theme="monokai"),
+                title="✨ Proposed Auto-Fix",
+                border_style="green"
+            ))
+
+    # 3. Show the Logic Reasons
+    for issue in issues:
+        explanation = EXPLAIN_CATALOG.get(issue.code.lower(), issue.message)
+        console.print(Panel(
+            f"[bold red]ISSUE:[/bold red] {issue.code}\n[yellow]WHY:[/yellow] {explanation}",
+            title="Logic Violation",
+            border_style="red"
+        ))
+
+
 def run():
     # Asset Integrity
     logo_path = resource_path("assets/Kubecuro Logo.png")
@@ -177,7 +221,7 @@ def run():
     subparsers.add_parser("version")
     
     explain_p = subparsers.add_parser("explain")
-    explain_p.add_argument("resource", nargs="?", choices=list(EXPLAIN_CATALOG.keys()))
+    explain_p.add_argument("resource", nargs="?")
     
     subparsers.add_parser("completion").add_argument("shell", choices=["bash", "zsh"])
 
@@ -202,15 +246,41 @@ def run():
     if args.command == "checklist":
         show_checklist(); return
     
+    # --- EXPLAIN COMMAND LOGIC ---
     if args.command == "explain":
         res = args.resource.lower() if args.resource else ""
+        
+        # Scenario A: User points to a real file (e.g., kubecuro explain deployment.yaml)
+        if os.path.exists(res):
+            # 1. Quickly scan the file to find the errors
+            syn, shield = Synapse(), Shield()
+            syn.scan_file(res)
+            file_issues = []
+            for doc in syn.all_docs:
+                findings = shield.scan(doc, all_docs=syn.all_docs)
+                for f in findings:
+                    file_issues.append(AuditIssue(
+                        code=f['code'], severity=f['severity'], 
+                        file=res, message=f['msg']
+                    ))
+            
+            # 2. Show the "Deep Dive" interactive view
+            with open(res, 'r') as f:
+                code = f.read()
+            syntax = Syntax(code, "yaml", theme="monokai", line_numbers=True)
+            console.print(Panel(f"🔍 [bold]Interactive Diagnosis:[/bold] {res}", style="blue"))
+            console.print(syntax)
+            
+            for issue in file_issues:
+                explanation = EXPLAIN_CATALOG.get(issue.code.lower(), issue.message)
+                console.print(Panel(f"[bold red]ISSUE:[/bold red] {issue.code}\n[yellow]WHY:[/yellow] {explanation}", border_style="red"))
+            return
+
+        # Scenario B: User asks for a general concept (e.g., kubecuro explain hpa)
         if res in EXPLAIN_CATALOG:
             console.print(Panel(Markdown(EXPLAIN_CATALOG[res]), title=f"Logic: {res}", border_style="green"))
         else:
-            sugg = difflib.get_close_matches(res, EXPLAIN_CATALOG.keys(), n=1, cutoff=0.6)
-            valid = ", ".join([f"[cyan]{k}[/cyan]" for k in EXPLAIN_CATALOG.keys()])
-            msg = f"Resource '{res}' not found." + (f" Did you mean '{sugg[0]}'?" if sugg else "")
-            console.print(Panel(f"{msg}\n\nAvailable: {valid}", title="Catalog", border_style="red"))
+            console.print("[red]Please provide a valid keyword (hpa, rbac) or a filename.[/red]")
         return
 
     # --- 2. SMART COMMAND ROUTING ---
