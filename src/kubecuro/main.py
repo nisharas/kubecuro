@@ -196,9 +196,15 @@ def interactive_explain(target_file, issues):
     # 3. Show the Logic Reasons
     for issue in issues:
         explanation = EXPLAIN_CATALOG.get(issue.code.lower(), issue.message)
+        
+        # Grab line number if available
+        line_info = getattr(issue, 'line', None)
+        title_str = f"📍 Line {line_info}" if line_info else "Logic Violation"
+
         console.print(Panel(
-            f"[bold red]ISSUE:[/bold red] {issue.code}\n[yellow]WHY:[/yellow] {explanation}",
-            title="Logic Violation",
+            f"[bold red]ISSUE:[/bold red] {issue.code}\n[yellow]REASON:[/yellow] {explanation}",
+            title=title_str,
+            title_align="left",
             border_style="red"
         ))
 
@@ -261,7 +267,7 @@ def run():
                 for f in findings:
                     file_issues.append(AuditIssue(
                         code=f['code'], severity=f['severity'], 
-                        file=res, message=f['msg']
+                        file=res, message=f['msg'], line=f.get('line')
                     ))
             
             # 2. Show the "Deep Dive" interactive view
@@ -333,7 +339,8 @@ def run():
                         severity=str(finding['severity']),
                         file=fname,
                         message=str(finding['msg']),
-                        source="Shield"
+                        source="Shield",
+                        line=finding.get('line')
                     ))
             
     # 4. SYNAPSE AUDIT
@@ -358,7 +365,9 @@ def run():
         for i in all_issues:
             # Add to Rich Table
             c = "red" if "🔴" in i.severity else "orange3" if "🟠" in i.severity else "green"
-            res_table.add_row(f"[{c}]{i.severity}[/{c}]", i.file, i.message)
+            # Create a nice "file:line" string
+            loc = f"{i.file}:{i.line}" if getattr(i, 'line', None) else i.file
+            res_table.add_row(f"[{c}]{i.severity}[/{c}]", loc, i.message)
             
             # 2. TEST SAFETY: Print raw text if we are in a test environment
             # This ensures pytest 'sees' the strings even if Rich formatting hides them
