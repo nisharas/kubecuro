@@ -1,0 +1,23 @@
+# Exhibit A: The "Ghost Service" Failure
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-service
+spec:
+  selector:
+    app: kubecuro-web  # <--- ERROR: No Pod has this label!
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-pod
+  labels:
+    app: wrong-label   # <--- The mismatch
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.21
