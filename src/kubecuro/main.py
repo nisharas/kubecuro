@@ -237,7 +237,9 @@ def run():
         for f in files:
             fname = os.path.basename(f)
             # 1. HEALER STAGE
-            is_fixed = linter_engine(f, dry_run=args.dry_run)
+            # If command is 'scan', force dry_run to True so Shield can see the original errors
+            force_dry = True if command == "scan" else args.dry_run
+            is_fixed = linter_engine(f, dry_run=force_dry)
             if is_fixed:
                 all_issues.append(AuditIssue(
                     code="FIXED", 
