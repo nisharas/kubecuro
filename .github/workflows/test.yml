@@ -1,6 +1,6 @@
 name: Project Quality Check
 
-on: [push, pull_request] # Runs every time you save code to GitHub
+on: [push, pull_request]
 
 jobs:
   run-tests:
@@ -14,10 +14,12 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install Kubecuro
+      - name: Install Dependencies
         run: |
-          pip install -r requirements.txt
-          pip install . # Installs your tool so the tests can find it
+          python -m pip install --upgrade pip
+          pip install pytest  # <--- THIS IS THE FIX
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install . 
 
       - name: Run Logic Tests
         run: pytest tests/
