@@ -9,16 +9,19 @@ def test_rbac_wildcard_detection(shield_engine):
     """Verify that global wildcards in RBAC are flagged as 🔴 HIGH"""
     bad_rbac = {
         "kind": "ClusterRole",
+        "apiVersion": "rbac.authorization.k8s.io/v1",
         "metadata": {"name": "star-lord"},
         "rules": [{"apiGroups": ["*"], "resources": ["*"], "verbs": ["*"]}]
     }
-    findings = shield_engine.check_rbac_security(bad_rbac)
+    # Use the unified scan method
+    findings = shield_engine.scan(bad_rbac)
     assert any(f['code'] == "RBAC_WILD" and f['severity'] == "🔴 HIGH" for f in findings)
 
 def test_privileged_container_detection(shield_engine):
     """Verify that privileged containers are flagged"""
     bad_pod = {
         "kind": "Pod",
+        "apiVersion": "v1",
         "metadata": {"name": "unsafe-pod"},
         "spec": {
             "containers": [{
@@ -27,26 +30,37 @@ def test_privileged_container_detection(shield_engine):
             }]
         }
     }
-    findings = shield_engine.check_version_and_security(bad_pod)
+    findings = shield_engine.scan(bad_pod)
     assert any(f['code'] == "SEC_PRIVILEGED" for f in findings)
 
 def test_hpa_missing_requests(shield_engine):
     """Verify HPA flags missing requests in the target deployment"""
-    # Simulate the 'web-stack.yaml' logic
     deployment = {
         "kind": "Deployment",
+        "apiVersion": "apps/v1",
         "metadata": {"name": "web-deploy"},
         "spec": {"template": {"spec": {"containers": [{"name": "app", "resources": {}}]}}}
     }
     hpa = {
         "kind": "HorizontalPodAutoscaler",
+        "apiVersion": "autoscaling/v2",
         "metadata": {"name": "web-hpa"},
         "spec": {
-            "scaleTargetRef": {"name": "web-deploy"},
+            "scaleTargetRef": {"name": "web-deploy", "kind": "Deployment"},
             "metrics": [{"type": "Resource", "resource": {"name": "cpu"}}]
         }
     }
     
-    # We pass the deployment in the all_docs list
-    findings = shield_engine.audit_hpa(hpa, workload_docs=[deployment])
+    # Test the cross-resource linkage via the all_docs parameter
+    findings = shield_engine.scan(hpa, all_docs=[deployment, hpa])
     assert any(f['code'] == "HPA_MISSING_REQ" for f in findings)
+
+def test_api_deprecation_detection(shield_engine):
+    """Verify that old API versions (used by Healer) are correctly flagged"""
+    old_ingress = {
+        "apiVersion": "networking.k8s.io/v1beta1",
+        "kind": "Ingress",
+        "metadata": {"name": "old-ingress"}
+    }
+    findings = shield_engine.scan(old_ingress)
+    assert any(f['code'] == "API_DEPRECATED" for f in findings)
