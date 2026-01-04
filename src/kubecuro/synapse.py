@@ -50,7 +50,6 @@ class Synapse:
                 if kind in ['Deployment', 'Pod', 'StatefulSet', 'DaemonSet']:
                     self.workload_docs.append(doc)
                     template = spec.get('template', {}) if kind in ['Deployment', 'StatefulSet', 'DaemonSet'] else doc
-                    # Safety guard: Ensure labels is always a dict
                     labels = template.get('metadata', {}).get('labels') or {}
                     pod_spec = template.get('spec', {}) if kind != 'Pod' else spec
                     containers = pod_spec.get('containers') or []
@@ -60,12 +59,10 @@ class Synapse:
                     volumes = pod_spec.get('volumes') or []
                     
                     for c in containers:
-                        # Extract ports for Probe/Service validation
                         for p in c.get('ports') or []:
                             if p.get('containerPort'): container_ports.append(p.get('containerPort'))
                             if p.get('name'): container_ports.append(p.get('name'))
                         
-                        # Extract Health Probes
                         for p_type in ['livenessProbe', 'readinessProbe', 'startupProbe']:
                             p_data = c.get(p_type)
                             if p_data and 'httpGet' in p_data:
@@ -88,7 +85,7 @@ class Synapse:
 
                 # --- 4. Ingress, HPA, Configs ---
                 elif kind == 'Ingress':
-                    self.ingresses.append({'name': name, 'namespace': ns, 'file': fname, 'spec': spec})
+                    self.ingresses.append({'name': name, 'namespace': ns, 'file': fname, 'spec': spec, 'raw_doc': doc})
                 elif kind == 'HorizontalPodAutoscaler':
                     self.hpas.append({'name': name, 'file': fname, 'doc': doc})
                 elif kind in ['ConfigMap', 'Secret']:
@@ -97,7 +94,6 @@ class Synapse:
                     self.netpols.append({'name': name, 'file': fname, 'selector': spec.get('podSelector') or {}})
 
         except Exception: 
-            # Silent fail for unparseable YAMLs to prevent tool crash
             pass
 
     def audit(self) -> List[AuditIssue]:
@@ -110,7 +106,6 @@ class Synapse:
         for svc in self.consumers:
             if not svc['selector']: continue
             
-            # Logic: All Service selector labels must exist in the Workload labels
             matches = [
                 p for p in self.producers 
                 if p['namespace'] == svc['namespace'] and 
@@ -118,34 +113,55 @@ class Synapse:
             ]
             
             if not matches:
+                # Retrieve raw doc for precise line mapping
+                raw_svc = next((d for d in self.all_docs if d.get('metadata', {}).get('name') == svc['name'] and d.get('kind') == 'Service'), None)
                 results.append(AuditIssue(
                     code="GHOST", 
                     severity="🔴 HIGH", 
                     file=svc['file'], 
+                    line=shield.get_line(raw_svc, 'selector') if raw_svc else 1,
                     message=f"GHOST SERVICE: Service '{svc['name']}' matches 0 workload pods.", 
                     fix="Update Service selector to match Deployment labels.",
                     source="Synapse"
                 ))
 
-        # --- AUDIT: Ingress to Service Mapping ---
+        # --- AUDIT: Ingress to Service Mapping & Port Alignment ---
         for ing in self.ingresses:
             rules = ing['spec'].get('rules') or []
             for rule in rules:
                 paths = rule.get('http', {}).get('paths') or []
                 for path in paths:
                     backend = path.get('backend', {})
-                    svc_name = backend.get('serviceName') or backend.get('service', {}).get('name')
+                    svc_node = backend.get('service', backend)
+                    svc_name = svc_node.get('name') or backend.get('serviceName')
+                    port_node = svc_node.get('port', {})
+                    t_port = port_node.get('number') if isinstance(port_node, dict) else port_node
+
                     if svc_name:
                         match = next((s for s in self.consumers if s['name'] == svc_name and s['namespace'] == ing['namespace']), None)
+                        
                         if not match:
                             results.append(AuditIssue(
                                 code="INGRESS_ORPHAN", 
                                 severity="🔴 HIGH", 
-                                file=ing['file'], 
+                                file=ing['file'],
+                                line=shield.get_line(path),
                                 message=f"Ingress references non-existent Service '{svc_name}'.", 
                                 fix="Create the missing Service or fix the backend name.",
                                 source="Synapse"
                             ))
+                        elif t_port:
+                            svc_ports = [p.get('port') for p in match.get('ports', [])]
+                            if t_port not in svc_ports:
+                                results.append(AuditIssue(
+                                    code="INGRESS_PORT_MISMATCH",
+                                    severity="🔴 CRITICAL",
+                                    file=ing['file'],
+                                    line=shield.get_line(path),
+                                    message=f"Ingress targets port {t_port}, but Service '{svc_name}' only exposes {svc_ports}.",
+                                    fix=f"Change Ingress port to one of {svc_ports}.",
+                                    source="Synapse"
+                                ))
 
         # --- AUDIT: ConfigMap/Secret Volume Existence ---
         for p in self.producers:
@@ -157,21 +173,24 @@ class Synapse:
                 if ref_name:
                     exists = any(c['name'] == ref_name and c['namespace'] == p['namespace'] for c in self.configs)
                     if not exists:
+                        # Find the container/workload line
+                        raw_workload = next((d for d in self.all_docs if d.get('metadata', {}).get('name') == p['name']), None)
                         results.append(AuditIssue(
                             code="VOL_MISSING", 
                             severity="🟠 MED", 
-                            file=p['file'], 
+                            file=p['file'],
+                            line=shield.get_line(raw_workload, 'spec') if raw_workload else 1,
                             message=f"Workload '{p['name']}' references missing ConfigMap/Secret '{ref_name}'.", 
                             fix="Verify the resource name and namespace.",
                             source="Synapse"
                         ))
 
-        # In Synapse.audit()
+        # --- AUDIT: HPA Resource Validation (Using Shield) ---
         for hpa in self.hpas:
             hpa_errors = shield.audit_hpa(hpa['doc'], self.workload_docs)
             for err in hpa_errors:
                 results.append(AuditIssue(
-                    code=err['code'], # Extract from dict
+                    code=err['code'], 
                     severity=err['severity'], 
                     file=hpa['file'], 
                     message=err['msg'], 
@@ -184,30 +203,36 @@ class Synapse:
         for p in self.producers:
             for probe in p.get('probes') or []:
                 if probe['port'] and probe['port'] not in p['ports']:
+                    raw_p = next((d for d in self.all_docs if d.get('metadata', {}).get('name') == p['name']), None)
                     results.append(AuditIssue(
                         code="PROBE_GAP", 
                         severity="🟠 MED", 
-                        file=p['file'], 
+                        file=p['file'],
+                        line=shield.get_line(raw_p, 'spec') if raw_p else 1,
                         message=f"Health probe port '{probe['port']}' is not exposed in containerPorts.", 
                         fix="Add the port to the container's ports list.",
                         source="Synapse"
                     ))
 
-        # --- AUDIT: Service Port Alignment ---
+        # --- AUDIT: Service Port Alignment (Updated Block) ---
         for svc in self.consumers:
-            # Find matching producers
+            raw_svc_doc = next((d for d in self.all_docs if d.get('metadata', {}).get('name') == svc['name'] and d.get('kind') == 'Service'), None)
+            
             for p in self.producers:
                 if p['namespace'] == svc['namespace'] and svc['selector'].items() <= p['labels'].items():
                     for s_port in svc['ports']:
-                        t_port = s_port.get('targetPort')
-                        # Check if targetPort (int or name) exists in the producer's ports
-                        if t_port and t_port not in p['ports']:
+                        target_p = s_port.get('targetPort')
+                        
+                        if target_p and target_p not in p['ports']:
+                            err_line = shield.get_line(raw_svc_doc, 'spec') if raw_svc_doc else 1
+                            
                             results.append(AuditIssue(
                                 code="PORT_MISMATCH",
                                 severity="🟠 MED",
                                 file=svc['file'],
-                                message=f"Service '{svc['name']}' targetPort '{t_port}' not found in workload '{p['name']}'.",
-                                fix=f"Expose port {t_port} in {p['kind']} '{p['name']}' container ports.",
+                                line=err_line, 
+                                message=f"Service '{svc['name']}' targetPort '{target_p}' not found in workload '{p['name']}'.",
+                                fix=f"Expose port {target_p} in {p['kind']} '{p['name']}' container ports.",
                                 source="Synapse"
                             ))
 
