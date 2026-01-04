@@ -1,3 +1,4 @@
+"""
 --------------------------------------------------------------------------------
 AUTHOR:      Nishar A Sunkesala / FixMyK8s
 PURPOSE:      Main Entry Point for KubeCuro: Logic Diagnostics & Auto-Healing.
@@ -104,6 +105,7 @@ KubeCuro checks for **Placement Contradictions**:
 
 def show_help():
     help_console = Console()
+    # logo_ascii must be absolutely clean of hidden Unicode spaces
     logo_ascii = r"""
  ██╗  ██╗██╗   ██╗██████╗ ███████╗ ██████╗██╗   ██╗██████╗  ██████╗ 
  ██║ ██╔╝██║   ██║██╔══██╗██╔════╝██╔════╝██║   ██║██╔══██╗██╔═══██╗
@@ -234,7 +236,7 @@ def run():
     with console.status(f"[bold green]Processing {len(files)} files...") as status:
         for f in files:
             fname = os.path.basename(f)
-            # 1. HEALER STAGE: Check for syntax/versioning fixes
+            # 1. HEALER STAGE
             is_fixed = linter_engine(f, dry_run=args.dry_run)
             if is_fixed:
                 all_issues.append(AuditIssue(
@@ -245,16 +247,14 @@ def run():
                     fix="N/A", 
                     source="Healer"
                 ))
-            # 2. SYNAPSE STAGE: Parse and map relationships
+            # 2. SYNAPSE STAGE
             syn.scan_file(f)
 
-    # 3. SHIELD STAGE: Audit logic, security, and HPA
+    # 3. SHIELD STAGE
     for doc in syn.all_docs:
         shield_findings = shield.scan(doc, all_docs=syn.all_docs)
         for finding in shield_findings:
-            # Check if this specific file was already 'fixed' to avoid duplicate stale API warnings
             already_fixed = any(i.file == doc.get('_origin_file') and i.code == "FIXED" for i in all_issues)
-            
             if not (command == "fix" and already_fixed and finding['code'] == "API_DEPRECATED"):
                 all_issues.append(AuditIssue(
                     code=finding['code'],
@@ -265,7 +265,7 @@ def run():
                     source="Shield"
                 ))
     
-    # 4. SYNAPSE AUDIT: Cross-resource connectivity checks
+    # 4. SYNAPSE AUDIT
     all_issues.extend(syn.audit())
 
     # --- 4. REPORTING ---
@@ -288,8 +288,6 @@ def run():
         security = sum(1 for i in all_issues if i.code in ['RBAC_WILD', 'SEC_PRIVILEGED', 'RBAC_SECRET'])
         api_rot  = sum(1 for i in all_issues if i.code == 'API_DEPRECATED')
         repairs  = sum(1 for i in all_issues if i.code == 'FIXED')
-
-        # Remaining Issues (Excludes what was just fixed)
         remaining = len([i for i in all_issues if "FIXED" not in i.severity])
         
         sum_md = f"### 📈 Audit Summary\n"
@@ -304,7 +302,6 @@ def run():
         else:
             sum_md += f"* **Auto-Fixable:** {repairs}"
 
-        # Intelligent Border Coloring
         all_sev = str([i.severity for i in all_issues])
         if "🔴" in all_sev or security > 0 or ghosts > 0:
             border_col = "red"
