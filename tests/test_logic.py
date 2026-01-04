@@ -47,9 +47,9 @@ def test_healer_fix_functionality(tmp_path):
         
     temp_file = tmp_path / "fix_test.yaml"
     shutil.copy(src, temp_file)
-    
-    # Run the fix
-    fix_result = run_kubecuro("fix", str(temp_file))
+
+    # Add the "-y" flag here to avoid the EOFError in CI
+    fix_result = run_kubecuro("fix", str(temp_file), "-y")
     
     assert "FIXED" in fix_result.stdout.upper()
     # Verify file actually changed
