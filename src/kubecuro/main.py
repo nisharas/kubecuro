@@ -242,9 +242,13 @@ def run():
         help="Resource keyword (hpa, rbac, etc.) or path to a YAML file"
     )
 
-    # This custom lambda tells argcomplete: 
-    # "Suggest these keywords AND look for files in the current folder"
+    # 1. This tells the shell what to suggest on TAB
     resource_arg.completer = lambda prefix, **kwargs: list(EXPLAIN_CATALOG.keys()) + FilesCompleter()("__call__", prefix)
+    
+    # 2. This is the SECRET SAUCE: Tell argcomplete to ignore the fact 
+    # that it might be a file so it doesn't default to local file-only mode.
+    # Add this line:
+    argcomplete.autocomplete(parser, validator=lambda sig, val: True)
     
     subparsers.add_parser("completion").add_argument("shell", choices=["bash", "zsh"])
 
