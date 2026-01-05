@@ -446,15 +446,18 @@ def run():
             for doc in current_docs:
                 findings = shield.scan(doc, all_docs=syn.all_docs)
                 for finding in findings:
-                    # We still add the finding, but we can change the message 
-                    # for the UI if a fix is already pending.
+                    # FIX: During 'scan', we MUST add the finding to satisfy tests
+                    # Even if the healer says it's fixable.
+                    
                     is_already_fixed = any(i.file == fname and i.code == "FIXED" for i in all_issues)
                     
-                    if command == "fix" and finding['code'] == "API_DEPRECATED" and is_already_fixed:
+                    # Only skip the raw finding if we are actually in 'fix' mode 
+                    # and the user already applied the fix.
+                    if command == "fix" and not effective_dry and is_already_fixed:
                         continue
                     
                     all_issues.append(AuditIssue(
-                        code=str(finding['code']),  # <--- Tests need this!
+                        code=str(finding['code']), 
                         severity=str(finding['severity']),
                         file=fname,
                         message=str(finding['msg']),
