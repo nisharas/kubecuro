@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 --------------------------------------------------------------------------------
 AUTHOR:      Nishar A Sunkesala / FixMyK8s
@@ -406,18 +407,21 @@ def run():
                     source="Healer"
                 ))
 
-            # --- THE FIX LOGIC (LOOP PREVENTION) ---
-            if fixed_content and fixed_content != original_content:
+            # --- THE FIX LOGIC (REFINED TO PREVENT HANGS) ---
+            if fixed_content and fixed_content.strip() != original_content.strip():
                 if command == "fix":
-                    # --- 1. HANDLE DRY RUN (PRIORITY EXIT) ---
+                    # STOP THE SPINNER to free up the terminal input buffer
+                    status.stop()
+
+                    diff = list(difflib.unified_diff(
+                        original_content.splitlines(),
+                        fixed_content.splitlines(),
+                        fromfile="current", tofile="proposed", lineterm=""
+                    ))
+
                     if args.dry_run:
                         console.print(f"\n[bold cyan]🔍 DRY RUN: Proposed changes for {fname}:[/bold cyan]")
-                        diff = difflib.unified_diff(
-                            original_content.splitlines(),
-                            fixed_content.splitlines(),
-                            fromfile="current", tofile="proposed", lineterm=""
-                        )
-                        console.print(Syntax("\n".join(list(diff)), "diff", theme="monokai"))
+                        console.print(Syntax("\n".join(diff), "diff", theme="monokai"))
                         
                         all_issues.append(AuditIssue(
                             code="FIXED", 
@@ -426,29 +430,24 @@ def run():
                             message="[bold green]API UPGRADE:[/bold green] repairs available",
                             source="Healer"
                         ))
-                        # ABSOLUTE SHORT-CIRCUIT: Skip prompt logic entirely
+                        status.start() # RESTART SPINNER before next file
                         continue 
 
-                    # --- 2. HANDLE ACTUAL FIX ---
+                    # ACTUAL FIX PATH
                     console.print(f"\n[bold yellow]🛠️ Proposed fix for {fname}:[/bold yellow]")
-                    diff = difflib.unified_diff(
-                        original_content.splitlines(),
-                        fixed_content.splitlines(),
-                        fromfile="current", tofile="proposed", lineterm=""
-                    )
-                    console.print(Syntax("\n".join(list(diff)), "diff", theme="monokai"))
+                    console.print(Syntax("\n".join(diff), "diff", theme="monokai"))
                     
                     do_fix = False
                     if args.yes:
                         do_fix = True
                     elif sys.stdin.isatty():
                         try:
-                            # Final fail-safe against prompt hang
-                            confirm = console.input(f"[bold cyan]Apply this fix to {fname}? (y/N): [/bold cyan]")
-                            if confirm.lower() == 'y':
+                            confirm = console.input(f"[bold cyan]Apply this fix to {fname}? (y/N): [/bold cyan]").strip().lower()
+                            if confirm == 'y':
                                 do_fix = True
                         except (EOFError, KeyboardInterrupt):
-                            do_fix = False # Gracefully skip on Ctrl+C or pipe end
+                            console.print("\n[bold red]Skipping fix due to interruption.[/bold red]")
+                            do_fix = False
                     
                     if do_fix:
                         with open(f, 'w') as out_f:
@@ -462,7 +461,9 @@ def run():
                             code="FIXED", severity="🟡 SKIPPED", file=fname, 
                             message="[bold yellow]SKIPPED:[/bold yellow] Fix declined.", source="Healer"
                         ))
-                    continue # SHORT-CIRCUIT to next file after handling fix/skip
+                    
+                    status.start() # RESTART SPINNER before next file
+                    continue 
 
                 else:
                     # SCAN MODE (Read-only)
@@ -477,7 +478,7 @@ def run():
                 findings = shield.scan(doc, all_docs=syn.all_docs)
                 for finding in findings:
                     f_code = str(finding['code']).upper()
-                    # Check if a fix was already registered to avoid redundant criticals
+                    # Avoid duplicate reporting if already fixed
                     is_fix_registered = any(i.file == fname and i.code == "FIXED" and "FIXED" in i.severity for i in all_issues)
                     
                     if command == "scan" or (command == "fix" and not is_fix_registered):
@@ -508,7 +509,6 @@ def run():
         res_table.add_column("Message")
         
         for i in all_issues:
-            # Color logic based on emoji/severity string
             if "🔴" in i.severity: c = "red"
             elif "🟡" in i.severity: c = "yellow"
             elif "🟢" in i.severity: c = "green"
@@ -543,7 +543,6 @@ def run():
         unhealthy_files = set()
         for i in all_issues:
             if "🔴" in i.severity:
-                # If it's critical but we fixed it, don't count the file as unhealthy
                 was_fixed = any(fix.file == i.file and fix.code == "FIXED" and "FIXED" in fix.severity for fix in all_issues)
                 if not was_fixed: unhealthy_files.add(i.file)
             if i.code in ["GHOST", "HPA_LOGIC", "HPA_MISSING_REQ"]:
@@ -590,7 +589,6 @@ if __name__ == "__main__":
     try:
         run()
     except KeyboardInterrupt:
-        # Final cleanup for manual interrupts
         console.print("\n[bold red]Aborted by user.[/bold red]")
         sys.exit(0)
     except Exception as e:
