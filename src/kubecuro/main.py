@@ -155,17 +155,17 @@ def show_help():
 
     help_console.print("\n[bold yellow]Examples:[/bold yellow]")
     help_console.print("  [dim]1. Scan a specific file for logic gaps:[/dim]")
-    help_console.print("     kubecuro scan deployment.yaml")
+    help_console.print("      kubecuro scan deployment.yaml")
     help_console.print("\n  [dim]2. Smart-Route (Automatic Scan if command is omitted):[/dim]")
-    help_console.print("     kubecuro ./manifests/")
+    help_console.print("      kubecuro ./manifests/")
     help_console.print("\n  [dim]3. Automatically fix API deprecations and syntax:[/dim]")
-    help_console.print("     kubecuro fix ./test-cluster/")
+    help_console.print("      kubecuro fix ./test-cluster/")
     help_console.print("\n  [dim]4. Preview fixes without touching the YAML files:[/dim]")
-    help_console.print("     kubecuro fix service.yaml --dry-run")
+    help_console.print("      kubecuro fix service.yaml --dry-run")
     help_console.print("\n  [dim]5. Understand why KubeCuro audits RBAC:[/dim]")
-    help_console.print("     kubecuro explain rbac")
+    help_console.print("      kubecuro explain rbac")
     help_console.print("\n  [dim]6. Enable Autocomplete:[/dim]")
-    help_console.print("      [bold cyan]source <(kubecuro completion bash)[/bold cyan]")
+    help_console.print("       [bold cyan]source <(kubecuro completion bash)[/bold cyan]")
     
     help_console.print("\n[italic white]Architecture: Static Binary / x86_64[/italic white]\n")
 
@@ -392,12 +392,15 @@ def run():
             
             effective_dry = True if command == "scan" else args.dry_run
             
-            if command == "fix" and not args.dry_run:
-                fixed_content = linter_engine(f, dry_run=True, return_content=True)
-                with open(f, 'r') as original:
-                    original_content = original.read()
-                      
-                if fixed_content and fixed_content != original_content:
+            # 🚀 OPTIMIZATION: Call linter_engine ONCE and store content
+            fixed_content = linter_engine(f, dry_run=True, return_content=True)
+            msg = None
+
+            with open(f, 'r') as original:
+                original_content = original.read()
+
+            if fixed_content and fixed_content != original_content:
+                if command == "fix" and not args.dry_run:
                     console.print(f"\n[bold yellow]🛠️ Proposed fix for {fname}:[/bold yellow]")
                     diff = difflib.unified_diff(
                         original_content.splitlines(),
@@ -405,35 +408,29 @@ def run():
                         fromfile="current", tofile="proposed", lineterm=""
                     )
                     console.print(Syntax("\n".join(list(diff)), "diff", theme="monokai"))
-                                    
-                    # --- FIX START ---
+                    
                     do_fix = False
                     if getattr(args, 'yes', False):
                         do_fix = True
-                        msg = "[bold green]FIXED:[/bold green] Applied repairs (Auto-approved)."
                     elif sys.stdin.isatty():
                         try:
+                            # Pause spinner during input
                             confirm = console.input(f"[bold cyan]Apply this fix to {fname}? (y/N): [/bold cyan]")
                             if confirm.lower() == 'y':
                                 do_fix = True
-                                msg = "[bold green]FIXED:[/bold green] Applied API and syntax repairs."
-                            else:
-                                msg = "[bold yellow]SKIPPED:[/bold yellow] User declined the fix."
                         except EOFError:
-                            # Handle cases where input() is called but no terminal is present
-                            msg = "[bold red]SKIPPED:[/bold red] EOF detected. Use -y for non-interactive fix."
-                    else:
-                        # Non-interactive (CI/CD) and no -y flag provided
-                        msg = "[bold red]SKIPPED:[/bold red] Non-interactive environment. Use -y to auto-apply."
+                            do_fix = False
                     
                     if do_fix:
-                        linter_engine(f, dry_run=False)
-                    # --- FIX END ---
+                        # Write stored fixed_content directly to avoid re-running linter logic
+                        with open(f, 'w') as out_f:
+                            out_f.write(fixed_content)
+                        msg = "[bold green]FIXED:[/bold green] Applied repairs."
+                    else:
+                        msg = "[bold yellow]SKIPPED:[/bold yellow] Fix declined."
                 else:
-                    msg = "No repairs needed."
-            else:
-                has_changes = linter_engine(f, dry_run=True)
-                msg = "[bold green]API UPGRADE:[/bold green] networking.k8s.io/v1beta1 → v1" if has_changes else None
+                    # Scan mode or dry-run mode
+                    msg = "[bold green]API UPGRADE:[/bold green] networking.k8s.io/v1beta1 → v1"
             
             if msg:
                 all_issues.append(AuditIssue(
@@ -444,7 +441,8 @@ def run():
                     source="Healer"
                 ))
 
-            current_docs = [d for d in syn.all_docs if d.get('_origin_file') == f or len(files) == 1]
+            # Shield scan using the synced synapse docs
+            current_docs = [d for d in syn.all_docs if d.get('_origin_file') == f]
             for doc in current_docs:
                 for finding in shield.scan(doc, all_docs=syn.all_docs):
                     if command == "fix" and finding['code'] == "API_DEPRECATED":
@@ -510,7 +508,7 @@ def run():
             if i.code in ["GHOST", "HPA_LOGIC", "HPA_MISSING_REQ"]:
                 unhealthy_files.add(i.file)
 
-        success_rate = ((len(files) - len(unhealthy_files)) / len(files)) * 100
+        success_rate = ((len(files) - len(unhealthy_files)) / len(files)) * 100 if files else 0
         if len(unhealthy_files) > 0 and success_rate > 99.9: success_rate = 99.9
 
         summary_table = Table(show_header=False, box=None, padding=(0, 2))
