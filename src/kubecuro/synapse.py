@@ -1,7 +1,7 @@
 """
 --------------------------------------------------------------------------------
 AUTHOR:      Nishar A Sunkesala / FixMyK8s
-PURPOSE:     The Synapse Engine: Maps cross-resource logic gaps (Fully Expanded).
+PURPOSE:      The Synapse Engine: Maps cross-resource logic gaps (Fully Expanded).
 --------------------------------------------------------------------------------
 """
 import os
@@ -104,17 +104,23 @@ class Synapse:
 
         # --- AUDIT: Service to Pod Matching (Ghost Service Detection) ---
         for svc in self.consumers:
-            if not svc['selector']: continue
+            selector = svc.get('selector') or {}
+            if not selector: continue
             
+            # Robust matching: ensures labels are not None and selector items match
             matches = [
                 p for p in self.producers 
                 if p['namespace'] == svc['namespace'] and 
-                svc['selector'].items() <= p['labels'].items()
+                p.get('labels') is not None and 
+                selector.items() <= p['labels'].items()
             ]
             
             if not matches:
-                # Retrieve raw doc for precise line mapping
-                raw_svc = next((d for d in self.all_docs if d.get('metadata', {}).get('name') == svc['name'] and d.get('kind') == 'Service'), None)
+                # Precisely match the document from all_docs
+                raw_svc = next((d for d in self.all_docs if 
+                                d.get('kind') == 'Service' and 
+                                d.get('metadata', {}).get('name') == svc['name']), None)
+                
                 results.append(AuditIssue(
                     code="GHOST", 
                     severity="🔴 HIGH", 
@@ -214,16 +220,21 @@ class Synapse:
                         source="Synapse"
                     ))
 
-        # --- AUDIT: Service Port Alignment (Updated Block) ---
+        # --- AUDIT: Service Port Alignment (Type-Safe Comparison) ---
         for svc in self.consumers:
             raw_svc_doc = next((d for d in self.all_docs if d.get('metadata', {}).get('name') == svc['name'] and d.get('kind') == 'Service'), None)
             
             for p in self.producers:
-                if p['namespace'] == svc['namespace'] and svc['selector'].items() <= p['labels'].items():
+                # Logic Match: Same namespace and selector matches labels
+                if p['namespace'] == svc['namespace'] and (svc.get('selector') or {}).items() <= (p.get('labels') or {}).items():
                     for s_port in svc['ports']:
                         target_p = s_port.get('targetPort')
+                        if not target_p: continue
                         
-                        if target_p and target_p not in p['ports']:
+                        # Type-Safe check: convert all to string to handle 80 vs "80"
+                        workload_ports = [str(x) for x in p.get('ports', [])]
+                        
+                        if str(target_p) not in workload_ports:
                             err_line = shield.get_line(raw_svc_doc, 'spec') if raw_svc_doc else 1
                             
                             results.append(AuditIssue(
