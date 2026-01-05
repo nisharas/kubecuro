@@ -375,7 +375,12 @@ def run():
     console.print(Panel(f"❤️ [bold white]KubeCuro {command.upper()}[/bold white]", style="bold magenta"))
     
     syn, shield, all_issues = Synapse(), Shield(), []
-    files = [os.path.join(target, f) for f in os.listdir(target) if f.endswith(('.yaml', '.yml'))] if os.path.isdir(target) else [target]
+    
+    # Snapshot files to avoid loop if directory content changes
+    if os.path.isdir(target):
+        files = [os.path.join(target, f) for f in os.listdir(target) if f.endswith(('.yaml', '.yml'))]
+    else:
+        files = [target]
     
     if not files:
         console.print(f"\n[bold yellow]⚠ No YAML files found in:[/bold yellow] {target}"); return
@@ -421,6 +426,8 @@ def run():
                             message="[bold green]API UPGRADE:[/bold green] networking.k8s.io/v1beta1 → v1",
                             source="Healer"
                         ))
+                        continue # Skip Shield scan for this file in dry-run mode
+
                     else:
                         # ACTUAL FIX: Prompt for input
                         console.print(f"\n[bold yellow]🛠️ Proposed fix for {fname}:[/bold yellow]")
@@ -454,6 +461,8 @@ def run():
                                 code="FIXED", severity="🟡 SKIPPED", file=fname, 
                                 message="[bold yellow]SKIPPED:[/bold yellow] Fix declined.", source="Healer"
                             ))
+                        continue # Skip Shield scan after fixing
+
                 else:
                     # SCAN MODE: Just report that a fix is available
                     all_issues.append(AuditIssue(
@@ -461,12 +470,13 @@ def run():
                         message="[bold green]API UPGRADE:[/bold green] networking.k8s.io/v1beta1 → v1", source="Healer"
                     ))
 
-            # Shield scan
+            # Shield scan - Only runs if we didn't 'continue' above
             current_docs = [d for d in syn.all_docs if d.get('_origin_file') == f]
             for doc in current_docs:
                 findings = shield.scan(doc, all_docs=syn.all_docs)
                 for finding in findings:
                     f_code = str(finding['code']).upper()
+                    # Check if we already fixed this file to avoid duplicate alerts
                     is_fix_registered = any(i.file == fname and i.code == "FIXED" and "FIXED" in i.severity for i in all_issues)
                     
                     if command == "scan" or (command == "fix" and not is_fix_registered):
