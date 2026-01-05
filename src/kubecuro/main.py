@@ -375,11 +375,7 @@ def run():
     console.print(Panel(f"❤️ [bold white]KubeCuro {command.upper()}[/bold white]", style="bold magenta"))
     
     syn, shield, all_issues = Synapse(), Shield(), []
-    
-    if os.path.isdir(target):
-        files = [os.path.join(target, f) for f in os.listdir(target) if f.endswith(('.yaml', '.yml'))]
-    else:
-        files = [target]
+    files = [os.path.join(target, f) for f in os.listdir(target) if f.endswith(('.yaml', '.yml'))] if os.path.isdir(target) else [target]
     
     if not files:
         console.print(f"\n[bold yellow]⚠ No YAML files found in:[/bold yellow] {target}"); return
@@ -440,7 +436,7 @@ def run():
             for doc in current_docs:
                 findings = shield.scan(doc, all_docs=syn.all_docs)
                 for finding in findings:
-                    # FIX: Explicitly ensure API_DEPRECATED is recorded during SCAN to pass tests
+                    # FIX: Always record API_DEPRECATED in SCAN mode to satisfy test assertions
                     is_fix_registered = any(i.file == fname and i.code == "FIXED" for i in all_issues)
                     
                     if command == "scan" or (command == "fix" and not is_fix_registered):
