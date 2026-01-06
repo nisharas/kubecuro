@@ -38,13 +38,17 @@ class Shield:
         try:
             if doc is None:
                 return 1
-            if not hasattr(doc, 'lc'):
-                return 1
-            if key and hasattr(doc.lc, 'data') and key in doc.lc.data:
-                # Target specific key (e.g., 'apiVersion' or 'spec')
+            
+            # If we are looking for a specific key in a CommentedMap
+            if key and hasattr(doc, 'lc') and hasattr(doc.lc, 'data') and key in doc.lc.data:
                 return doc.lc.data[key][0] + 1
-            # Fallback to starting line of the document
-            return getattr(doc.lc, 'line', 0) + 1
+            
+            # General line lookup for the object itself
+            if hasattr(doc, 'lc') and hasattr(doc.lc, 'line'):
+                return doc.lc.line + 1
+            
+            # Fallback for nested objects that might be standard dicts but part of a CommentedMap
+            return 1
         except Exception:
             return 1
 
@@ -84,6 +88,7 @@ class Shield:
             ingress_ns = doc.get('metadata', {}).get('namespace', 'default')
             spec = doc.get('spec', {}) or {}
             
+            # 
             for rule in spec.get('rules', []):
                 http = rule.get('http', {}) or {}
                 for path in http.get('paths', []):
@@ -166,6 +171,7 @@ class Shield:
         rules = resource.get("rules") or resource.get("spec", {}).get("rules", [])
     
         if kind in ["Role", "ClusterRole"]:
+            # 
             for rule in rules:
                 verbs = rule.get("verbs", [])
                 resources = rule.get("resources", [])
