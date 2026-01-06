@@ -119,7 +119,7 @@ KubeCuro checks for **Placement Contradictions**:
 def show_help():
     help_console = Console()
     logo_ascii = r"""
- ██╗  ██╗██║   ██╗██████╗ ███████╗ ██████╗██║   ██╗██████╗  ██████╗ 
+ ██╗  ██╗██║   ██║██████╗ ███████╗ ██████╗██║   ██║██████╗  ██████╗ 
  ██║ ██╔╝██║   ██║██╔══██╗██╔════╝██╔════╝██║   ██║██╔══██╗██╔═══██╗
  █████╔╝ ██║   ██║██████╔╝█████╗  ██║     ██║   ██║██████╔╝██║   ██║
  ██╔═██╗ ██║   ██║██╔══██╗██╔══╝  ██║     ██║   ██║██╔══██╗██║   ██║
@@ -399,7 +399,6 @@ def run():
 
             # Record deprecated/trigger codes from Healer
             for t_code in triggered_codes:
-                # SPLIT CODE AND LINE NUMBER
                 parts = str(t_code).split(":")
                 code_str = parts[0].upper()
                 line_val = int(parts[1]) if len(parts) > 1 else None
@@ -413,10 +412,9 @@ def run():
                     source="Healer"
                 ))
 
-            # --- THE FIX LOGIC (REFINED TO PREVENT HANGS) ---
+            # --- THE FIX LOGIC ---
             if fixed_content and fixed_content.strip() != original_content.strip():
                 if command == "fix":
-                    # STOP THE SPINNER to free up the terminal input buffer
                     status.stop()
 
                     diff = list(difflib.unified_diff(
@@ -436,10 +434,9 @@ def run():
                             message="[bold green]API UPGRADE:[/bold green] repairs available",
                             source="Healer"
                         ))
-                        status.start() # RESTART SPINNER before next file
+                        status.start()
                         continue 
 
-                    # ACTUAL FIX PATH
                     console.print(f"\n[bold yellow]🛠️ Proposed fix for {fname}:[/bold yellow]")
                     console.print(Syntax("\n".join(diff), "diff", theme="monokai"))
                     
@@ -468,23 +465,21 @@ def run():
                             message="[bold yellow]SKIPPED:[/bold yellow] Fix declined.", source="Healer"
                         ))
                     
-                    status.start() # RESTART SPINNER before next file
+                    status.start()
                     continue 
 
                 else:
-                    # SCAN MODE (Read-only)
                     all_issues.append(AuditIssue(
                         code="FIXED", severity="🟡 WOULD FIX", file=fname, 
                         message="[bold green]API UPGRADE:[/bold green] repairs available", source="Healer"
                     ))
 
-            # Shield scan - Only runs if we didn't 'continue' above
-            current_docs = [d for d in syn.all_docs if d.get('_origin_file') == f]
+            # Shield scan - Integrated with Synapse's all_docs for cross-resource visibility
+            current_docs = [d for d in syn.all_docs if d.get('_origin_file') == fname]
             for doc in current_docs:
                 findings = shield.scan(doc, all_docs=syn.all_docs)
                 for finding in findings:
                     f_code = str(finding['code']).upper()
-                    # Avoid duplicate reporting if already fixed
                     is_fix_registered = any(i.file == fname and i.code == "FIXED" and "FIXED" in i.severity for i in all_issues)
                     
                     if command == "scan" or (command == "fix" and not is_fix_registered):
@@ -497,11 +492,12 @@ def run():
                             line=finding.get('line')
                         ))
             
-    synapse_issues = syn.audit()
-    for issue in synapse_issues:
+    # --- SYNAPSE LOGIC AUDIT (Graph Analysis) ---
+    # We run this after the files are scanned so Synapse has the complete cluster map
+    synapse_findings = syn.audit()
+    for issue in synapse_findings:
         issue.code = str(issue.code).upper()
-        issue.severity = str(issue.severity)
-        issue.message = str(issue.message)
+        # Synapse now provides line numbers via shield.get_line()
         all_issues.append(issue)
 
     # --- 4. REPORTING ---
