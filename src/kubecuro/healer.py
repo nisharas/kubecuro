@@ -73,9 +73,15 @@ class Healer:
             raw_docs = re.split(r'^---\s*$', original_content, flags=re.MULTILINE)
             healed_parts = []
             self.detected_codes = set()
+            
+            # Track cumulative line numbers for multi-doc reporting
+            current_line_offset = 1 if not original_content.startswith("---") else 2
 
             for doc_str in raw_docs:
-                if not doc_str.strip(): continue
+                if not doc_str.strip(): 
+                    # Maintain line count even for empty chunks
+                    current_line_offset += doc_str.count('\n') + 1
+                    continue
 
                 # Syntax Repair Logic - Conservative cleanup
                 d = doc_str.replace('\t', '    ')
@@ -91,7 +97,18 @@ class Healer:
 
                         # API Migration Logic using Shield's catalog
                         if self.shield and api in self.shield.DEPRECATIONS:
-                            self.detected_codes.add("API_DEPRECATED")
+                            # FIND EXACT LINE NUMBER WITHIN THIS DOC
+                            doc_lines = doc_str.splitlines()
+                            relative_line = 1
+                            for i, line in enumerate(doc_lines):
+                                if "apiVersion:" in line and api in line:
+                                    relative_line = i + 1
+                                    break
+                            
+                            # Calculate global line number
+                            global_line = current_line_offset + (relative_line - 1)
+                            self.detected_codes.add(f"API_DEPRECATED:{global_line}")
+                            
                             if apply_fixes:
                                 mapping = self.shield.DEPRECATIONS[api]
                                 # Handle dict mapping vs string mapping
@@ -110,6 +127,9 @@ class Healer:
                 except Exception:
                     # If parsing fails, keep the original doc fragment
                     healed_parts.append(doc_str.strip())
+                
+                # Update offset for next document: text lines + the --- separator
+                current_line_offset += doc_str.count('\n') + 1
 
             if not healed_parts: 
                 return (None if return_content else False, set())
