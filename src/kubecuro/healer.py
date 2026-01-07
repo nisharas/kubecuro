@@ -30,7 +30,7 @@ class Healer:
         self.shield = Shield() if Shield else None
         self.detected_codes = set()
 
-    def apply_security_patches(self, doc, kind):
+    def apply_security_patches(self, doc, kind, global_line_offset=0):
         """Standard Security Hardening Logic."""
         if not isinstance(doc, dict): return
         
@@ -48,9 +48,11 @@ class Healer:
             if isinstance(template, dict):
                 t_spec = template.get('spec')
                 if t_spec and isinstance(t_spec, dict):
-                    # 1. Automount ServiceAccount Token
+                    # 1. Automount ServiceAccount Token - NON-TECHNICAL FIX:
+                    # We no longer force this to False because it can break app connectivity.
+                    # We just flag it for the user to see.
                     if t_spec.get('automountServiceAccountToken') is None:
-                        t_spec['automountServiceAccountToken'] = False
+                        self.detected_codes.add(f"SEC_TOKEN_AUDIT:{global_line_offset}")
                     
                     # 2. Privileged Escalation / Privileged Mode
                     containers = t_spec.get('containers', [])
@@ -59,7 +61,9 @@ class Healer:
                             if not isinstance(c, dict): continue
                             s_ctx = c.get('securityContext', {})
                             if s_ctx and s_ctx.get('privileged') is True:
+                                # This is safe to auto-fix as 'privileged' is rarely required
                                 s_ctx['privileged'] = False
+                                self.detected_codes.add(f"SEC_PRIVILEGED:{global_line_offset}")
 
     def heal_file(self, file_path, apply_fixes=True, dry_run=False, return_content=False):
         try:
@@ -116,8 +120,8 @@ class Healer:
                                 if new_api and not str(new_api).startswith("REMOVED"):
                                     parsed['apiVersion'] = new_api
 
-                        if apply_fixes:
-                            self.apply_security_patches(parsed, kind)
+                        # Apply security audits/patches (Passing the current line offset for better reporting)
+                        self.apply_security_patches(parsed, kind, global_line_offset=current_line_offset)
 
                         buf = StringIO()
                         self.yaml.dump(parsed, buf)
