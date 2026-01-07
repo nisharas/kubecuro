@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 --------------------------------------------------------------------------------
 AUTHOR:      Nishar A Sunkesala / FixMyK8s
@@ -81,7 +82,8 @@ class Synapse:
                         # Extract container ports (numeric and named)
                         for p in c.get('ports') or []:
                             if p.get('containerPort'):
-                                c_ports.append(p.get('containerPort'))
+                                # FIX: Convert to string for consistent matching later
+                                c_ports.append(str(p.get('containerPort')))
                             if p.get('name'):
                                 c_ports.append(p.get('name'))
                         
@@ -91,7 +93,7 @@ class Synapse:
                             if p_data and 'httpGet' in p_data:
                                 probes.append({
                                     'type': p_type, 
-                                    'port': p_data['httpGet'].get('port'),
+                                    'port': str(p_data['httpGet'].get('port')),
                                     'path': p_data['httpGet'].get('path')
                                 })
 
@@ -160,7 +162,18 @@ class Synapse:
         results = []
         shield = Shield()
 
-        # --- AUDIT: Service -> Pod Mapping (GHOST Detection) ---
+        # --- 0. Individual Resource Shield Audit ---
+        # This ensures Shield's single-resource checks are included in the results
+        for doc in self.all_docs:
+            findings = shield.scan(doc, self.all_docs)
+            for f in findings:
+                results.append(AuditIssue(
+                    code=f['code'], severity=f['severity'], file=doc.get('_origin_file', 'unknown'),
+                    line=f.get('line', 1), message=f['msg'], fix="Check manifest for compliance.",
+                    source="Shield"
+                ))
+
+        # --- 1. AUDIT: Service -> Pod Mapping (GHOST Detection) ---
         for svc in self.consumers:
             selector = svc.get('selector')
             if not selector:
@@ -182,7 +195,7 @@ class Synapse:
                     source="Synapse"
                 ))
 
-        # --- AUDIT: Ingress -> Service Backend Validation ---
+        # --- 2. AUDIT: Ingress -> Service Backend Validation ---
         for ing in self.ingresses:
             rules = ing['spec'].get('rules') or []
             for rule in rules:
@@ -216,7 +229,7 @@ class Synapse:
                                     source="Synapse"
                                 ))
 
-        # --- AUDIT: Volume Mount Consistency (Missing Configs/Secrets) ---
+        # --- 3. AUDIT: Volume Mount Consistency (Missing Configs/Secrets) ---
         for p in self.producers:
             for vol in p.get('volumes') or []:
                 ref = None
@@ -233,7 +246,7 @@ class Synapse:
                             source="Synapse"
                         ))
 
-        # --- AUDIT: HPA Resource Validation (Piped to Shield) ---
+        # --- 4. AUDIT: HPA Resource Validation (Piped to Shield) ---
         for hpa in self.hpas:
             hpa_errors = shield.audit_hpa(hpa['doc'], self.workload_docs)
             for err in hpa_errors:
@@ -244,7 +257,7 @@ class Synapse:
                     source="Shield"
                 ))
 
-        # --- AUDIT: Probe Port Integrity ---
+        # --- 5. AUDIT: Probe Port Integrity ---
         for p in self.producers:
             for probe in p.get('probes'):
                 valid_ports = [str(x) for x in p['ports']]
@@ -257,9 +270,10 @@ class Synapse:
                         source="Synapse"
                     ))
 
-        # --- AUDIT: Service -> Workload Port Alignment ---
+        # --- 6. AUDIT: Service -> Workload Port Alignment ---
         for svc in self.consumers:
             for p in self.producers:
+                # Only check pods that actually match this service
                 if p['namespace'] == svc['namespace'] and svc['selector'].items() <= p['labels'].items():
                     for s_port in svc['ports']:
                         target = s_port.get('targetPort')
