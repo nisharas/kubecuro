@@ -13,6 +13,8 @@ import argparse
 import platform
 import difflib
 import time
+import json
+import tempfile
 
 from typing import List
 from argcomplete.completers import FilesCompleter
@@ -49,6 +51,32 @@ def resource_path(relative_path):
     except Exception:
         base_path = os.path.dirname(__file__)
     return os.path.join(base_path, relative_path)
+
+BASELINE_FILE = ".kubecuro-baseline.json"
+
+def load_baseline() -> set:
+    """Reads the JSON baseline and returns a set of unique fingerprints."""
+    if os.path.exists(BASELINE_FILE):
+        try:
+            with open(BASELINE_FILE, "r") as f:
+                data = json.load(f)
+                return set(data.get("issues", []))
+        except Exception:
+            return set()
+    return set()
+
+def save_baseline(issues):
+    """Saves every issue found in the current scan to the baseline file."""
+    fingerprints = list(set([f"{i.file}:{i.code}" for i in issues if i.code != "FIXED"]))
+    data = {
+        "project_name": os.path.basename(os.getcwd()),
+        "created_at": time.strftime("%Y-%m-%d"),
+        "issues": fingerprints
+    }
+    with open(BASELINE_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+
 
 # --- Extensive Resource Explanations Catalog ---
 EXPLAIN_CATALOG = {
@@ -286,10 +314,12 @@ def run():
     parser.add_argument("-h", "--help", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("-y", "--yes", action="store_true", help="Auto-accept all fixes without prompting")
+    parser.add_argument("--all", action="store_true", help="Override baseline to show all technical debt")
     
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("scan").add_argument("target", nargs="?")
     subparsers.add_parser("fix").add_argument("target", nargs="?")
+    subparsers.add_parser("baseline").add_argument("target", nargs="?")
     subparsers.add_parser("checklist")
     subparsers.add_parser("version")
     
@@ -502,12 +532,28 @@ def run():
                             do_fix = False
                     
                     if do_fix:
-                        with open(f, 'w') as out_f:
-                            out_f.write(fixed_content)
-                        all_issues.append(AuditIssue(
-                            code="FIXED", severity="🟢 FIXED", file=fname, 
-                            message="[bold green]FIXED:[/bold green] Applied repairs.", source="Healer"
-                        ))
+                        # Get the directory of the file to ensure the temp file is on the same partition
+                        target_dir = os.path.dirname(os.path.abspath(f))
+                        
+                        # Create a temporary file in the same directory
+                        fd, temp_path = tempfile.mkstemp(dir=target_dir, text=True)
+                        try:
+                            with os.fdopen(fd, 'w') as tmp:
+                                tmp.write(fixed_content)
+                            
+                            # Atomic swap: replaces the original file with the temp file
+                            os.replace(temp_path, f)
+                            
+                            all_issues.append(AuditIssue(
+                                code="FIXED", severity="🟢 FIXED", file=fname, 
+                                message="[bold green]FIXED:[/bold green] Applied repairs atomically.", 
+                                source="Healer"
+                            ))
+                        except Exception as e:
+                            # Clean up the temp file if something went wrong before the replace
+                            if os.path.exists(temp_path):
+                                os.remove(temp_path)
+                            log.error(f"Failed to save changes to {fname}: {e}")
                     else:
                         all_issues.append(AuditIssue(
                             code="FIXED", severity="🟡 SKIPPED", file=fname, 
@@ -531,13 +577,32 @@ def run():
             all_issues.append(issue)
             seen_identifiers.add(f"{issue.file}:{issue.line}:{issue.code}")
 
+    # === BASELINE & SUPPRESSION LOGIC ===
+    baseline_fingerprints = load_baseline()
+    
+    if command == "baseline":
+        save_baseline(all_issues)
+        console.print(Panel(f"✅ BASELINE CREATED: {len(all_issues)} issues recorded and suppressed.", border_style="green"))
+        return
+
+    reporting_issues = []
+    legacy_summary = {}
+
+    for issue in all_issues:
+        fingerprint = f"{issue.file}:{issue.code}"
+        if fingerprint in baseline_fingerprints and not args.all:
+            legacy_summary[issue.code] = legacy_summary.get(issue.code, 0) + 1
+        else:
+            reporting_issues.append(issue)
+
     # --- 4. REPORTING ---
-    if not all_issues:
-        console.print("\n[bold green]✔ No issues found![/bold green]")
+    if not reporting_issues:
+        console.print("\n[bold green]✔ No new issues found![/bold green]")
+        if legacy_summary:
+            console.print(f"[dim]Note: {sum(legacy_summary.values())} legacy issues hidden by baseline. Use --all to see them.[/dim]")
     else:
-        # Group issues by filename for the new header format
         issues_by_file = {}
-        for i in all_issues:
+        for i in reporting_issues:
             issues_by_file.setdefault(i.file, []).append(i)
 
         for filename, file_issues in issues_by_file.items():
@@ -556,79 +621,63 @@ def run():
 
                 line_display = str(i.line) if i.line else "-"
                 res_table.add_row(f"[{c}]{i.severity}[/{c}]", line_display, i.code, i.message)
-                
-                if "PYTEST_CURRENT_TEST" in os.environ:
-                    print(f"AUDIT_LOG: {i.code} | {i.severity} | {i.message}")
 
             console.print(res_table)
 
-        # Full Expanded Summary Counters
-        ghosts    = sum(1 for i in all_issues if str(i.code).upper() == 'GHOST')
-        hpa_gaps  = sum(1 for i in all_issues if str(i.code).upper() in ['HPA_LOGIC', 'HPA_MISSING_REQ'])
-        security  = sum(1 for i in all_issues if any(x in str(i.code).upper() for x in ['RBAC', 'PRIVILEGED', 'SECRET', 'OOM_RISK', 'SEC_']))
-        api_rot   = sum(1 for i in all_issues if str(i.code).upper() == 'API_DEPRECATED')
-        repairs   = sum(1 for i in all_issues if str(i.code).upper() == 'FIXED' and "FIXED" in i.severity)
+        # --- Updated Counters (New vs Suppressed) ---
+        suppressed_sec = sum(legacy_summary.get(k, 0) for k in legacy_summary if any(x in k for x in ['RBAC', 'PRIVILEGED', 'SECRET', 'OOM_RISK', 'SEC_']))
+        suppressed_ghost = legacy_summary.get('GHOST', 0)
+        suppressed_hpa = legacy_summary.get('HPA_LOGIC', 0) + legacy_summary.get('HPA_MISSING_REQ', 0)
 
+        active_sec = sum(1 for i in reporting_issues if any(x in str(i.code).upper() for x in ['RBAC', 'PRIVILEGED', 'SECRET', 'OOM_RISK', 'SEC_']))
+        active_ghost = sum(1 for i in reporting_issues if str(i.code).upper() == 'GHOST')
+        active_hpa = sum(1 for i in reporting_issues if str(i.code).upper() in ['HPA_LOGIC', 'HPA_MISSING_REQ'])
+
+        # Compatibility for health logic
+        ghosts = active_ghost + suppressed_ghost
+        hpa_gaps = active_hpa + suppressed_hpa
+        security = active_sec + suppressed_sec
+        api_rot = sum(1 for i in all_issues if str(i.code).upper() == 'API_DEPRECATED')
+        repairs = sum(1 for i in all_issues if str(i.code).upper() == 'FIXED' and "FIXED" in i.severity)
+
+        # UI Styling Logic
         all_sev_str = "".join([i.severity for i in all_issues])
-        if security > 0 or ghosts > 0 or "🔴" in all_sev_str:
-            border_col = "red"
-        elif hpa_gaps > 0 or "🟡" in all_sev_str:
-            border_col = "yellow"
-        else:
-            border_col = "green"
+        border_col = "red" if (security > 0 or ghosts > 0 or "🔴" in all_sev_str) else "yellow" if (hpa_gaps > 0 or "🟡" in all_sev_str) else "green"
 
         elapsed_time = time.time() - start_time
-        unhealthy_files = set()
-        for i in all_issues:
-            if "🔴" in i.severity:
-                was_fixed = any(fix.file == i.file and fix.code == "FIXED" and "FIXED" in fix.severity for fix in all_issues)
-                if not was_fixed: unhealthy_files.add(i.file)
-            if i.code in ["GHOST", "HPA_LOGIC", "HPA_MISSING_REQ", "OOM_RISK"]:
-                unhealthy_files.add(i.file)
+        unhealthy_files = {i.file for i in all_issues if ("🔴" in i.severity and not any(f.file == i.file and f.code == "FIXED" for f in all_issues)) or i.code in ["GHOST", "HPA_LOGIC", "HPA_MISSING_REQ", "OOM_RISK"]}
+        success_rate = max(0, min(100, ((len(files) - len(unhealthy_files)) / len(files)) * 100)) if files else 0
 
-        success_rate = ((len(files) - len(unhealthy_files)) / len(files)) * 100 if files else 0
-        if len(unhealthy_files) > 0 and success_rate > 99.9: success_rate = 99.9
+        # FINAL SUMMARY TABLE
+        summary_table = Table(show_header=True, box=None, padding=(0, 2), header_style="bold cyan")
+        summary_table.add_column("Category", style="white")
+        summary_table.add_column("Active", justify="center", style="bold")
+        summary_table.add_column("Suppressed", justify="center", style="dim")
 
-        summary_table = Table(show_header=False, box=None, padding=(0, 2))
-        summary_table.add_row("📁 [bold white]Files Scanned[/bold white]", str(len(files)))
-        summary_table.add_row("⏱️  [bold cyan]Time Elapsed[/bold cyan]", f"{elapsed_time:.2f}s")
-        summary_table.add_section()
-        summary_table.add_row("🛡️  [bold red]Security Risks[/bold red]", str(security))
-        summary_table.add_row("👻  [bold yellow]Ghost Services[/bold yellow]", str(ghosts))
-        summary_table.add_row("📈  [bold blue]HPA Logic Gaps[/bold blue]", str(hpa_gaps))
-        summary_table.add_section()
-        summary_table.add_row("🛠️  [bold green]Auto-Fixable[/bold green]", f"[bold green]{repairs}[/bold green]")
+        summary_table.add_row("🛡️ Security Risks", f"[red]{active_sec}[/red]", str(suppressed_sec))
+        summary_table.add_row("👻 Ghost Services", f"[yellow]{active_ghost}[/yellow]", str(suppressed_ghost))
+        summary_table.add_row("📈 HPA Logic Gaps", f"[blue]{active_hpa}[/blue]", str(suppressed_hpa))
         
+        summary_table.add_section()
+        summary_table.add_row("📁 Files Scanned", str(len(files)), "")
+        summary_table.add_row("⏱️ Time Elapsed", f"{elapsed_time:.2f}s", "")
+
         rate_color = "green" if success_rate > 80 else "yellow" if success_rate > 50 else "red"
-        status_emoji = "🎯" if success_rate == 100 else "⚠️"
-        summary_table.add_row(f"{status_emoji} [bold white]Final Health Score[/bold white]", f"[{rate_color}]{success_rate:.1f}%[/{rate_color}]")
-        
+        summary_table.add_row(f"{'🎯' if success_rate == 100 else '⚠️'} Health Score", f"[{rate_color}]{success_rate:.1f}%[/{rate_color}]", "")
+
+        # Display Suppressed Baseline if it exists
+        if legacy_summary:
+            sum_text = "\n".join([f"• [dim]{count} {code}[/dim]" for code, count in legacy_summary.items()])
+            console.print(Panel(sum_text, title="📦 [bold white]BASELINE (Suppressed)[/bold white]", border_style="dim", expand=False))
+
+        console.print(Panel(summary_table, title="📊 [bold white]Final Audit Summary[/bold white]", border_style=border_col, expand=False))
+
         if all_issues:
             sec_pct = (security / len(all_issues)) * 100
             console.print(f"\n[bold white]Security Density:[/bold white] {sec_pct:.1f}%")
 
-        footer = None
-        if command == "fix":
-            status_text = "REPAIRED" if not args.dry_run else "FIXABLE"
-            footer = f"[bold white]{status_text}[/bold white]: {repairs} changes applied"
-
-        console.print(Panel(summary_table, title="[bold white]Final Audit Results[/bold white]", border_style=border_col, subtitle=footer, expand=False))
-
-        unfixed_issues = [i for i in all_issues if i.code != "FIXED"]
-        if unfixed_issues:
-            show_resolution_guide(unfixed_issues)
-        
-        if command == "fix" and not args.dry_run and repairs > 0:
-            console.print(Panel("[bold green]✔ HEAL COMPLETE: Manifests are now stable.[/bold green]", border_style="bold green", expand=False))
-        elif command == "scan" and (repairs > 0 or api_rot > 0):
-            console.print(f"\n[bold yellow]TIP:[/bold yellow] Run [bold cyan]kubecuro fix {target}[/bold cyan] to auto-repair deprecations.")
+        if api_rot > 0:
+            console.print(Panel(f"💡 [bold]Healer Tip:[/bold] {api_rot} API deprecations found. Run [bold cyan]kubecuro fix[/bold cyan] to upgrade them automatically.", border_style="blue"))
 
 if __name__ == "__main__":
-    try:
-        run()
-    except KeyboardInterrupt:
-        console.print("\n[bold red]Aborted by user.[/bold red]")
-        sys.exit(0)
-    except Exception as e:
-        log.exception(f"FATAL ERROR: {e}")
-        sys.exit(1)
+    run()
