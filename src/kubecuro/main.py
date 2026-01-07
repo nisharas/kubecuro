@@ -327,20 +327,29 @@ def run():
         
         if os.path.exists(res):
             syn, shield = Synapse(), Shield()
-            syn.scan_file(res)
+            
+            # --- CONTEXT-AWARE SCANNING ---
+            # Even if explaining one file, scan the directory to satisfy Synapse graph dependencies
+            context_dir = os.path.dirname(os.path.abspath(res))
+            for f_item in os.listdir(context_dir):
+                if f_item.endswith(('.yaml', '.yml')):
+                    syn.scan_file(os.path.join(context_dir, f_item))
+
             file_issues = []
             
+            # Identify Shield findings for ONLY the requested file
             for doc in syn.all_docs:
-                findings = shield.scan(doc, all_docs=syn.all_docs)
-                for f in findings:
-                    file_issues.append(AuditIssue(
-                        code=f['code'], 
-                        severity=f['severity'], 
-                        file=res, 
-                        message=f['msg'], 
-                        line=f.get('line'),
-                        source="Shield"
-                    ))
+                if doc.get('_origin_file') == os.path.basename(res):
+                    findings = shield.scan(doc, all_docs=syn.all_docs)
+                    for f in findings:
+                        file_issues.append(AuditIssue(
+                            code=f['code'], 
+                            severity=f['severity'], 
+                            file=res, 
+                            message=f['msg'], 
+                            line=f.get('line'),
+                            source="Shield"
+                        ))
             
             synapse_findings = syn.audit()
             for sf in synapse_findings:
@@ -376,7 +385,8 @@ def run():
     console.print(Panel(f"❤️ [bold white]KubeCuro {command.upper()}[/bold white]", style="bold magenta"))
     
     syn, shield, all_issues = Synapse(), Shield(), []
-    
+    seen_issues = set()  # DEDUPLICATION TRACKER
+
     # Snapshot files to avoid loop if directory content changes
     if os.path.isdir(target):
         files = sorted([os.path.join(target, f) for f in os.listdir(target) if f.endswith(('.yaml', '.yml'))])
@@ -391,13 +401,13 @@ def run():
             fname = os.path.basename(f)
             syn.scan_file(f) 
             
-            # Unpack the (fixed_content, triggered_codes) tuple
+            # Unpack Healer findings
             fixed_content, triggered_codes = linter_engine(f, dry_run=True, return_content=True)
 
             with open(f, 'r') as original:
                 original_content = original.read()
 
-            # Record deprecated/trigger codes from Healer
+            # Record codes from Healer
             for t_code in triggered_codes:
                 parts = str(t_code).split(":")
                 code_str = parts[0].upper()
@@ -411,6 +421,8 @@ def run():
                     message=f"Logic gap detected by Healer engine.",
                     source="Healer"
                 ))
+                # Mark as seen so Shield doesn't double-report
+                seen_issues.add(f"{fname}:{line_val}:{code_str}")
 
             # --- THE FIX LOGIC ---
             if fixed_content and fixed_content.strip() != original_content.strip():
@@ -428,11 +440,8 @@ def run():
                         console.print(Syntax("\n".join(diff), "diff", theme="monokai"))
                         
                         all_issues.append(AuditIssue(
-                            code="FIXED", 
-                            severity="🟡 WOULD FIX",
-                            file=fname, 
-                            message="[bold green]API UPGRADE:[/bold green] repairs available",
-                            source="Healer"
+                            code="FIXED", severity="🟡 WOULD FIX", file=fname, 
+                            message="[bold green]API UPGRADE:[/bold green] repairs available", source="Healer"
                         ))
                         status.start()
                         continue 
@@ -474,12 +483,18 @@ def run():
                         message="[bold green]API UPGRADE:[/bold green] repairs available", source="Healer"
                     ))
 
-            # Shield scan - Integrated with Synapse's all_docs for cross-resource visibility
+            # Shield scan - Integrated with Synapse docs
             current_docs = [d for d in syn.all_docs if d.get('_origin_file') == fname]
             for doc in current_docs:
                 findings = shield.scan(doc, all_docs=syn.all_docs)
                 for finding in findings:
                     f_code = str(finding['code']).upper()
+                    f_line = finding.get('line')
+
+                    # DEDUPLICATION: Skip if already reported by Healer
+                    if f"{fname}:{f_line}:{f_code}" in seen_issues:
+                        continue
+
                     is_fix_registered = any(i.file == fname and i.code == "FIXED" and "FIXED" in i.severity for i in all_issues)
                     
                     if command == "scan" or (command == "fix" and not is_fix_registered):
@@ -489,16 +504,16 @@ def run():
                             file=fname,
                             message=str(finding['msg']),
                             source="Shield",
-                            line=finding.get('line')
+                            line=f_line
                         ))
             
-    # --- SYNAPSE LOGIC AUDIT (Graph Analysis) ---
-    # We run this after the files are scanned so Synapse has the complete cluster map
+    # --- SYNAPSE LOGIC AUDIT ---
     synapse_findings = syn.audit()
     for issue in synapse_findings:
         issue.code = str(issue.code).upper()
-        # Synapse now provides line numbers via shield.get_line()
-        all_issues.append(issue)
+        # Final safety check against duplicates
+        if f"{issue.file}:{issue.line}:{issue.code}" not in seen_issues:
+            all_issues.append(issue)
 
     # --- 4. REPORTING ---
     if not all_issues:
@@ -525,7 +540,7 @@ def run():
 
         console.print(res_table)
 
-        # Summary Counters
+        # Full Expanded Summary Counters
         ghosts    = sum(1 for i in all_issues if str(i.code).upper() == 'GHOST')
         hpa_gaps  = sum(1 for i in all_issues if str(i.code).upper() in ['HPA_LOGIC', 'HPA_MISSING_REQ'])
         security  = sum(1 for i in all_issues if any(x in str(i.code).upper() for x in ['RBAC', 'PRIVILEGED', 'SECRET']))
