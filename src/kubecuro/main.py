@@ -113,6 +113,12 @@ An Ingress acts as a router, but it is trying to send traffic to a port that the
 KubeCuro checks for **Placement Contradictions**:
 1. **NodeSelector**: Verifies that selectors are not mutually exclusive.
 2. **Tolerations**: Ensures tolerations follow the correct Operator logic.
+""",
+    "oom_risk": """
+# 📉 OOM Risk Audit
+KubeCuro detects potential **Out-of-Memory** failures:
+1. **Missing Limits**: Containers without memory limits can destabilize nodes.
+2. **Request/Limit Gap**: Large gaps between requests and limits can lead to unpredictable eviction.
 """
 }
 
@@ -176,7 +182,7 @@ def show_checklist():
     table.add_row("Service", "Selector/Workload Linkage, Port Mapping")
     table.add_row("HPA", "Resource Request Presence, Target Validity")
     table.add_row("RBAC", "Wildcard Access, Secret Reading, Binding Integrity")
-    table.add_row("Shield", "API Version Deprecation, Security Gaps")
+    table.add_row("Shield", "API Version Deprecation, Security Gaps, OOM Risks")
     table.add_row("Synapse", "Cross-resource Ingress, ConfigMap, and STS checks")
     console.print(table)
 
@@ -260,6 +266,11 @@ def show_resolution_guide(issues):
             "🔑 RBAC Risk", 
             "Over-privileged service account detected. [bold yellow]Fix:[/bold yellow] Remove wildcards ('*') from your Role/ClusterRole and use specific resources."
         )
+    if "OOM_RISK" in codes:
+        guide_table.add_row(
+            "📉 OOM Risk",
+            "Workload is missing memory limits or has unsafe request ratios. [bold yellow]Fix:[/bold yellow] Define `resources.limits.memory` to prevent node instability."
+        )
 
     if guide_table.row_count > 0:
         console.print(guide_table)
@@ -329,7 +340,6 @@ def run():
             syn, shield = Synapse(), Shield()
             
             # --- CONTEXT-AWARE SCANNING ---
-            # Even if explaining one file, scan the directory to satisfy Synapse graph dependencies
             context_dir = os.path.dirname(os.path.abspath(res))
             for f_item in os.listdir(context_dir):
                 if f_item.endswith(('.yaml', '.yml')):
@@ -337,7 +347,6 @@ def run():
 
             file_issues = []
             
-            # Identify Shield findings for ONLY the requested file
             for doc in syn.all_docs:
                 if doc.get('_origin_file') == os.path.basename(res):
                     findings = shield.scan(doc, all_docs=syn.all_docs)
@@ -385,9 +394,8 @@ def run():
     console.print(Panel(f"❤️ [bold white]KubeCuro {command.upper()}[/bold white]", style="bold magenta"))
     
     syn, shield, all_issues = Synapse(), Shield(), []
-    seen_issues = set()  # DEDUPLICATION TRACKER
+    seen_identifiers = set()  # UNIQUE TRACKER: fname:line:code
 
-    # Snapshot files to avoid loop if directory content changes
     if os.path.isdir(target):
         files = sorted([os.path.join(target, f) for f in os.listdir(target) if f.endswith(('.yaml', '.yml'))])
     else:
@@ -401,34 +409,34 @@ def run():
             fname = os.path.basename(f)
             syn.scan_file(f) 
             
-            # Unpack Healer findings
             fixed_content, triggered_codes = linter_engine(f, dry_run=True, return_content=True)
 
             with open(f, 'r') as original:
                 original_content = original.read()
 
-            # Record codes from Healer
             for t_code in triggered_codes:
                 parts = str(t_code).split(":")
                 code_str = parts[0].upper()
                 line_val = int(parts[1]) if len(parts) > 1 else None
+
+                # Generate specific descriptive messages
+                msg = f"Logic gap detected by Healer engine: {code_str}"
+                if "DEPRECATED" in code_str:
+                    msg = f"API Version '{code_str}' is deprecated and will be removed in future K8s releases."
 
                 all_issues.append(AuditIssue(
                     code=code_str,
                     severity="🔴 CRITICAL" if "DEPRECATED" in code_str else "🟡 WARNING",
                     file=fname,
                     line=line_val,
-                    message=f"Logic gap detected by Healer engine.",
+                    message=msg,
                     source="Healer"
                 ))
-                # Mark as seen so Shield doesn't double-report
-                seen_issues.add(f"{fname}:{line_val}:{code_str}")
+                seen_identifiers.add(f"{fname}:{line_val}:{code_str}")
 
-            # --- THE FIX LOGIC ---
             if fixed_content and fixed_content.strip() != original_content.strip():
                 if command == "fix":
                     status.stop()
-
                     diff = list(difflib.unified_diff(
                         original_content.splitlines(),
                         fixed_content.splitlines(),
@@ -483,7 +491,6 @@ def run():
                         message="[bold green]API UPGRADE:[/bold green] repairs available", source="Healer"
                     ))
 
-            # Shield scan - Integrated with Synapse docs
             current_docs = [d for d in syn.all_docs if d.get('_origin_file') == fname]
             for doc in current_docs:
                 findings = shield.scan(doc, all_docs=syn.all_docs)
@@ -491,8 +498,7 @@ def run():
                     f_code = str(finding['code']).upper()
                     f_line = finding.get('line')
 
-                    # DEDUPLICATION: Skip if already reported by Healer
-                    if f"{fname}:{f_line}:{f_code}" in seen_issues:
+                    if f"{fname}:{f_line}:{f_code}" in seen_identifiers:
                         continue
 
                     is_fix_registered = any(i.file == fname and i.code == "FIXED" and "FIXED" in i.severity for i in all_issues)
@@ -506,48 +512,54 @@ def run():
                             source="Shield",
                             line=f_line
                         ))
+                        seen_identifiers.add(f"{fname}:{f_line}:{f_code}")
             
-    # --- SYNAPSE LOGIC AUDIT ---
     synapse_findings = syn.audit()
     for issue in synapse_findings:
         issue.code = str(issue.code).upper()
-        # Final safety check against duplicates
-        if f"{issue.file}:{issue.line}:{issue.code}" not in seen_issues:
+        if f"{issue.file}:{issue.line}:{issue.code}" not in seen_identifiers:
             all_issues.append(issue)
+            seen_identifiers.add(f"{issue.file}:{issue.line}:{issue.code}")
 
     # --- 4. REPORTING ---
     if not all_issues:
         console.print("\n[bold green]✔ No issues found![/bold green]")
     else:
-        res_table = Table(title="\n📊 Diagnostic Report", header_style="bold cyan", box=None)
-        res_table.add_column("Severity", width=12) 
-        res_table.add_column("Rule ID", style="bold red") 
-        res_table.add_column("Location", style="dim") 
-        res_table.add_column("Message")
-        
+        # Group issues by filename for the new header format
+        issues_by_file = {}
         for i in all_issues:
-            if "🔴" in i.severity: c = "red"
-            elif "🟡" in i.severity: c = "yellow"
-            elif "🟢" in i.severity: c = "green"
-            else: c = "white"
+            issues_by_file.setdefault(i.file, []).append(i)
 
-            line_info = f":{i.line}" if hasattr(i, 'line') and i.line else ""
-            loc = f"{i.file}{line_info}"
-            res_table.add_row(f"[{c}]{i.severity}[/{c}]", i.code, loc, i.message)
+        for filename, file_issues in issues_by_file.items():
+            console.print(f"\n📂 [bold white]LOCATION: {filename}[/bold white]")
+            res_table = Table(header_style="bold cyan", box=None, show_header=True)
+            res_table.add_column("Severity", width=12) 
+            res_table.add_column("Line", style="dim", justify="right", width=6)
+            res_table.add_column("Rule ID", style="bold red", width=15) 
+            res_table.add_column("Message")
             
-            if "PYTEST_CURRENT_TEST" in os.environ:
-                print(f"AUDIT_LOG: {i.code} | {i.severity} | {i.message}")
+            for i in sorted(file_issues, key=lambda x: (x.line if x.line else 0)):
+                if "🔴" in i.severity: c = "red"
+                elif "🟡" in i.severity: c = "yellow"
+                elif "🟢" in i.severity: c = "green"
+                else: c = "white"
 
-        console.print(res_table)
+                line_display = str(i.line) if i.line else "-"
+                res_table.add_row(f"[{c}]{i.severity}[/{c}]", line_display, i.code, i.message)
+                
+                if "PYTEST_CURRENT_TEST" in os.environ:
+                    print(f"AUDIT_LOG: {i.code} | {i.severity} | {i.message}")
+
+            console.print(res_table)
 
         # Full Expanded Summary Counters
         ghosts    = sum(1 for i in all_issues if str(i.code).upper() == 'GHOST')
         hpa_gaps  = sum(1 for i in all_issues if str(i.code).upper() in ['HPA_LOGIC', 'HPA_MISSING_REQ'])
-        security  = sum(1 for i in all_issues if any(x in str(i.code).upper() for x in ['RBAC', 'PRIVILEGED', 'SECRET']))
+        # Updated Security counter to include OOM_RISK and SEC_ prefixes
+        security  = sum(1 for i in all_issues if any(x in str(i.code).upper() for x in ['RBAC', 'PRIVILEGED', 'SECRET', 'OOM_RISK', 'SEC_']))
         api_rot   = sum(1 for i in all_issues if str(i.code).upper() == 'API_DEPRECATED')
         repairs   = sum(1 for i in all_issues if str(i.code).upper() == 'FIXED' and "FIXED" in i.severity)
 
-        # UI Border color logic
         all_sev_str = "".join([i.severity for i in all_issues])
         if security > 0 or ghosts > 0 or "🔴" in all_sev_str:
             border_col = "red"
@@ -562,7 +574,7 @@ def run():
             if "🔴" in i.severity:
                 was_fixed = any(fix.file == i.file and fix.code == "FIXED" and "FIXED" in fix.severity for fix in all_issues)
                 if not was_fixed: unhealthy_files.add(i.file)
-            if i.code in ["GHOST", "HPA_LOGIC", "HPA_MISSING_REQ"]:
+            if i.code in ["GHOST", "HPA_LOGIC", "HPA_MISSING_REQ", "OOM_RISK"]:
                 unhealthy_files.add(i.file)
 
         success_rate = ((len(files) - len(unhealthy_files)) / len(files)) * 100 if files else 0
