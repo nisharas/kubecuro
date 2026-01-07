@@ -516,80 +516,75 @@ def run():
                 ))
                 seen_identifiers.add(f"{fname}:{line_val}:{code_str}")
 
-			# --- 3.3. AUTO-FIX PIPELINE ---
-			if fixed_content and fixed_content.strip() != original_content.strip():
-				if command == "fix":
-					status.stop()
-					diff = list(difflib.unified_diff(
-						original_content.splitlines(),
-						fixed_content.splitlines(),
-						fromfile="current", tofile="proposed", lineterm=""
-					))
+            # --- 3.3. AUTO-FIX PIPELINE ---
+            if fixed_content and fixed_content.strip() != original_content.strip():
+                if command == "fix":
+                    status.stop()
+                    diff = list(difflib.unified_diff(
+                        original_content.splitlines(),
+                        fixed_content.splitlines(),
+                        fromfile="current", tofile="proposed", lineterm=""
+                    ))
 
-					if args.dry_run:
-						console.print(f"\n[bold cyan]🔍 DRY RUN: Proposed changes for {fname}:[/bold cyan]")
-						console.print(Syntax("\n".join(diff), "diff", theme="monokai"))
-						
-						all_issues.append(AuditIssue(
-							code="FIXED", severity="🟡 WOULD FIX", file=fname, 
-							message="[bold green]API UPGRADE:[/bold green] repairs available", source="Healer"
-						))
-						status.start()
-						continue 
+                    if args.dry_run:
+                        console.print(f"\n[bold cyan]🔍 DRY RUN: Proposed changes for {fname}:[/bold cyan]")
+                        console.print(Syntax("\n".join(diff), "diff", theme="monokai"))
+                        
+                        all_issues.append(AuditIssue(
+                            code="FIXED", severity="🟡 WOULD FIX", file=fname, 
+                            message="[bold green]API UPGRADE:[/bold green] repairs available", source="Healer"
+                        ))
+                        status.start()
+                        continue 
 
-					console.print(f"\n[bold yellow]🛠️ Proposed fix for {fname}:[/bold yellow]")
-					console.print(Syntax("\n".join(diff), "diff", theme="monokai"))
-					
-					do_fix = False
-					if args.yes:
-						do_fix = True
-					elif sys.stdin.isatty():
-						try:
-							confirm = console.input(f"[bold cyan]👉 Apply this fix to {fname}? (y/N): [/bold cyan]").strip().lower()
-							if confirm == 'y':
-								do_fix = True
-						except (EOFError, KeyboardInterrupt):
-							console.print("\n[bold red]Skipping fix due to interruption.[/bold red]")
-							do_fix = False
-					
-					if do_fix:
-						# Get the directory of the file to ensure the temp file is on the same partition
-					   target_dir = os.path.dirname(target_path)
-						
-						# Create a temporary file in the same directory
-						fd, temp_path = tempfile.mkstemp(dir=target_dir, text=True, suffix='.yaml')
-						try:
-							with os.fdopen(fd, 'w') as tmp:
-								tmp.write(fixed_content)
-							
-							# Atomic swap: replaces the original file with the temp file
-							os.replace(temp_path, target_path)
-							
-							all_issues.append(AuditIssue(
-								code="FIXED", severity="🟢 FIXED", file=fname, 
-								message="[bold green]FIXED:[/bold green] Applied repairs atomically.", 
-								source="Healer"
-							))
-						except Exception as e:
-							# Clean up the temp file if something went wrong before the replace
-							if os.path.exists(temp_path):
-								os.remove(temp_path)
-							log.error(f"Failed to save changes to {fname}: {e}")
-					else:
-						all_issues.append(AuditIssue(
-							code="FIXED", severity="🟡 SKIPPED", file=fname, 
-							message="[bold yellow]SKIPPED:[/bold yellow] Fix declined.", source="Healer"
-						))
-					
-					status.start()
-					continue 
-
-
-			else:
-				all_issues.append(AuditIssue(
-					code="FIXED", severity="🟡 WOULD FIX", file=fname, 
-					message="[bold green]API UPGRADE:[/bold green] repairs available", source="Healer"
-				))
+                    console.print(f"\n[bold yellow]🛠️ Proposed fix for {fname}:[/bold yellow]")
+                    console.print(Syntax("\n".join(diff), "diff", theme="monokai"))
+                    
+                    do_fix = False
+                    if args.yes:
+                        do_fix = True
+                    elif sys.stdin.isatty():
+                        try:
+                            confirm = console.input(f"[bold cyan]👉 Apply this fix to {fname}? (y/N): [/bold cyan]").strip().lower()
+                            if confirm == 'y':
+                                do_fix = True
+                        except (EOFError, KeyboardInterrupt):
+                            console.print("\n[bold red]Skipping fix due to interruption.[/bold red]")
+                            do_fix = False
+                    
+                    if do_fix:
+                        target_path = os.path.abspath(f)
+                        target_dir = os.path.dirname(target_path)
+                        
+                        fd, temp_path = tempfile.mkstemp(dir=target_dir, text=True, suffix='.yaml')
+                        try:
+                            with os.fdopen(fd, 'w') as tmp:
+                                tmp.write(fixed_content)
+                            
+                            os.replace(temp_path, target_path)
+                            
+                            all_issues.append(AuditIssue(
+                                code="FIXED", severity="🟢 FIXED", file=fname, 
+                                message="[bold green]FIXED:[/bold green] Applied repairs atomically.", 
+                                source="Healer"
+                            ))
+                        except Exception as e:
+                            if os.path.exists(temp_path):
+                                os.remove(temp_path)
+                            log.error(f"Failed to save changes to {fname}: {e}")
+                    else:
+                        all_issues.append(AuditIssue(
+                            code="FIXED", severity="🟡 SKIPPED", file=fname, 
+                            message="[bold yellow]SKIPPED:[/bold yellow] Fix declined.", source="Healer"
+                        ))
+                    
+                    status.start()
+                    continue 
+                else:
+                    all_issues.append(AuditIssue(
+                        code="FIXED", severity="🟡 WOULD FIX", file=fname, 
+                        message="[bold green]API UPGRADE:[/bold green] repairs available", source="Healer"
+                    ))
             
     # --- 3.4. CROSS-RESOURCE AUDIT (Synapse) ---
     synapse_findings = syn.audit()
@@ -619,33 +614,31 @@ def run():
 
     # --- 4. REPORTING ---
     if not reporting_issues:
-            console.print("\n[bold green]✔ No new issues found![/bold green]")
-            
-            # ADD THIS HERE: Even if no new issues, tell them what was hidden
-            if legacy_summary and not args.all:
-                 total_suppressed = sum(legacy_summary.values())
-                 console.print(Panel(
-                    f"🛡️  [bold]{total_suppressed}[/bold] legacy issues are currently suppressed by your baseline.\n"
-                    f"Run [bold cyan]kubecuro scan --all[/bold cyan] to audit your full technical debt.",
-                    title="Baseline Intelligence",
-                    border_style="cyan",
-                    expand=False
-                ))
-        else:
-            # ADD THIS HERE: If new issues exist, show the panel above the tables
-            if legacy_summary and not args.all:
-                total_suppressed = sum(legacy_summary.values())
-                console.print(Panel(
-                    f"🛡️  [bold]{total_suppressed}[/bold] legacy issues are currently suppressed by your baseline.\n"
-                    f"Run [bold cyan]kubecuro scan --all[/bold cyan] to audit your full technical debt.",
-                    title="Baseline Intelligence",
-                    border_style="cyan",
-                    expand=False
-                ))
+        console.print("\n[bold green]✔ No new issues found![/bold green]")
+        
+        if legacy_summary and not args.all:
+            total_suppressed = sum(legacy_summary.values())
+            console.print(Panel(
+                f"🛡️  [bold]{total_suppressed}[/bold] legacy issues are currently suppressed by your baseline.\n"
+                f"Run [bold cyan]kubecuro scan --all[/bold cyan] to audit your full technical debt.",
+                title="Baseline Intelligence",
+                border_style="cyan",
+                expand=False
+            ))
+    else:
+        if legacy_summary and not args.all:
+            total_suppressed = sum(legacy_summary.values())
+            console.print(Panel(
+                f"🛡️  [bold]{total_suppressed}[/bold] legacy issues are currently suppressed by your baseline.\n"
+                f"Run [bold cyan]kubecuro scan --all[/bold cyan] to audit your full technical debt.",
+                title="Baseline Intelligence",
+                border_style="cyan",
+                expand=False
+            ))
     
-            issues_by_file = {}
-            for i in reporting_issues:
-                issues_by_file.setdefault(i.file, []).append(i)
+        issues_by_file = {}
+        for i in reporting_issues:
+            issues_by_file.setdefault(i.file, []).append(i)
 
         for filename, file_issues in issues_by_file.items():
             console.print(f"\n📂 [bold white]LOCATION: {filename}[/bold white]")
@@ -722,7 +715,7 @@ def run():
             console.print(Panel(f"💡 [bold]Healer Tip:[/bold] {api_rot} API deprecations found. Run [bold cyan]kubecuro fix[/bold cyan] to upgrade them automatically.", border_style="blue"))
 
         if len(reporting_issues) > 20 and not HAS_BASELINE:
-                console.print("\n[bold yellow]💡 Pro-Tip:[/bold yellow] Found a lot of existing debt? Run [bold cyan]kubecuro baseline .[/bold cyan] to suppress these and focus on new changes moving forward.")
+            console.print("\n[bold yellow]💡 Pro-Tip:[/bold yellow] Found a lot of existing debt? Run [bold cyan]kubecuro baseline .[/bold cyan] to suppress these and focus on new changes moving forward.")
 
 if __name__ == "__main__":
     run()
