@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 --------------------------------------------------------------------------------
-AUTHOR:          Nishar A Sunkesala / FixMyK8s
-PURPOSE:          The Shield Engine: API Deprecation, Resource Stability, 
+AUTHOR:         Nishar A Sunkesala / FixMyK8s
+PURPOSE:         The Shield Engine: API Deprecation, Resource Stability, 
                   and RBAC Security Guard.
 --------------------------------------------------------------------------------
 """
@@ -40,11 +40,9 @@ class Shield:
             if doc is None:
                 return 1
             
-            # If we are looking for a specific key in a CommentedMap
             if key and hasattr(doc, 'lc') and hasattr(doc.lc, 'data') and key in doc.lc.data:
                 return doc.lc.data[key][0] + 1
             
-            # General line lookup for the object itself
             if hasattr(doc, 'lc') and hasattr(doc.lc, 'line'):
                 return doc.lc.line + 1
             
@@ -66,8 +64,11 @@ class Shield:
         
         # 2. RBAC Specific Security Checks
         raw_findings.extend(self.check_rbac_security(doc))
+
+        # 3. RESOURCE LIMITS (Fix 5 applied here)
+        raw_findings.extend(self.check_limits(doc))
         
-        # 3. Cross-Resource Logic (HPA & Ingress)
+        # 4. Cross-Resource Logic (HPA & Ingress)
         if all_docs:
             raw_findings.extend(self.audit_hpa(doc, all_docs))
             raw_findings.extend(self.check_ingress_service_alignment(doc, all_docs))
@@ -80,6 +81,25 @@ class Shield:
             
         return findings
 
+    def check_limits(self, doc):
+        """Fix 5: Detects missing resource limits to prevent OOMKills."""
+        findings = []
+        if doc.get('kind') in ['Deployment', 'StatefulSet', 'DaemonSet', 'Job']:
+            spec = doc.get('spec', {}) or {}
+            template = spec.get('template', {}) or {}
+            t_spec = template.get('spec', {}) or {}
+            
+            for c in t_spec.get('containers', []):
+                res = c.get('resources', {}) or {}
+                if 'limits' not in res:
+                    findings.append({
+                        "code": "OOM_RISK",
+                        "severity": "🔴 CRITICAL",
+                        "msg": f"Container '{c.get('name')}' has no resource limits. One memory leak could crash the entire Node.",
+                        "line": self.get_line(c)
+                    })
+        return findings
+
     def check_ingress_service_alignment(self, doc, all_docs):
         """Checks if Ingress backends point to valid Services and Ports."""
         findings = []
@@ -88,7 +108,6 @@ class Shield:
             ingress_ns = doc.get('metadata', {}).get('namespace', 'default')
             spec = doc.get('spec', {}) or {}
             
-            # Iterate through rules and paths
             for rule in spec.get('rules', []):
                 http = rule.get('http', {}) or {}
                 for path in http.get('paths', []):
@@ -115,7 +134,6 @@ class Shield:
                                 "line": self.get_line(path)
                             })
                     else:
-                        # Safety check: Only report orphan if we have scanned multiple documents (prevents false positives on single file scan)
                         if len(all_docs) > 1:
                             findings.append({
                                 "code": "INGRESS_ORPHAN",
@@ -126,7 +144,7 @@ class Shield:
         return findings
 
     def check_version_and_security(self, doc: dict) -> list:
-        """Checks for retired API versions and Container Privileged mode."""
+        """Checks for retired API versions and Container Security."""
         findings = []
         api = doc.get('apiVersion')
         kind = doc.get('kind', 'Object')
@@ -147,12 +165,12 @@ class Shield:
             template = spec.get('template') or {} if kind != 'Pod' else doc
             t_spec = template.get('spec') or {}
             
-            # Aligning with Healer's new safety logic
+            # Fix 3: Descriptive Security Message
             if t_spec.get('automountServiceAccountToken') is not False:
                 findings.append({
                     "severity": "🟡 WARN",
                     "code": "SEC_TOKEN_AUDIT",
-                    "msg": f"🛡️ Best Practice: {kind} '{name}' automounts ServiceAccount tokens. Consider disabling if unused.",
+                    "msg": "ServiceAccount token is auto-mounting. This increases attack surface if the pod is compromised.",
                     "line": self.get_line(t_spec, 'automountServiceAccountToken') if 'automountServiceAccountToken' in t_spec else self.get_line(doc)
                 })
             
