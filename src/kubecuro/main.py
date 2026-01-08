@@ -349,6 +349,12 @@ def run():
     # If it finds it, it provides suggestions and EXITs the script.
     argcomplete.autocomplete(parser)
 
+    # 3. 🛡️ THE SAFETY GATE (ADD THIS LINE)
+    # If _ARGCOMPLETE is in the environment, it means we are just 
+    # doing a Tab-completion. We must EXIT now so argparse doesn't crash.
+    if "_ARGCOMPLETE" in os.environ:
+        sys.exit(0)
+
     args, unknown = parser.parse_known_args()
 
     start_time = time.time() 
