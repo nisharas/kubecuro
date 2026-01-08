@@ -320,11 +320,7 @@ def show_resolution_guide(issues):
         console.print(guide_table)
 
 def run():
-    start_time = time.time() 
-    logo_path = resource_path("assets/Kubecuro Logo.png")
-    if not os.path.exists(logo_path):
-        log.debug(f"⚠️ UI Asset missing at {logo_path}")
-
+    # 1. SETUP THE PARSER
     parser = argparse.ArgumentParser(prog="kubecuro", add_help=False)
     parser.add_argument("-v", "--version", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
@@ -348,9 +344,18 @@ def run():
 
     subparsers.add_parser("completion").add_argument("shell", choices=["bash", "zsh"])
 
-    argcomplete.autocomplete(parser, validator=lambda sig, val: True)
+    # 2. ACTIVATE AUTOCOMPLETE
+    # This function is smart: it checks for _ARGCOMPLETE itself. 
+    # If it finds it, it provides suggestions and EXITs the script.
+    argcomplete.autocomplete(parser)
 
     args, unknown = parser.parse_known_args()
+
+    start_time = time.time() 
+    logo_path = resource_path("assets/KubeCuro-Logo.png")
+    if not os.path.exists(logo_path):
+        log.debug(f"⚠️ UI Asset missing at {logo_path}")
+
 
     # Check for baseline presence early
     HAS_BASELINE = os.path.exists(BASELINE_FILE)
