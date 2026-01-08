@@ -321,12 +321,13 @@ def show_resolution_guide(issues):
 
 def run():
     # 1. SETUP THE PARSER
-    parser = argparse.ArgumentParser(prog="kubecuro", add_help=False)
+    parser = argparse.ArgumentParser(prog="kubecuro", add_help=True)
     
-    # SILENCE ARGPARSE ERRORS during completion probes
-    # This prevents the "usage: kubecuro..." dump in your terminal
-    if "_ARGCOMPLETE" in os.environ or "COMP_LINE" in os.environ:
-        def silent_error(message): sys.exit(0)
+    # SILENCE ARGPARSE ERRORS only when probing
+    if "COMP_LINE" in os.environ:
+        def silent_error(message):
+            # If the shell is just probing, we don't want to see "invalid choice"
+            sys.exit(0)
         parser.error = silent_error
 
     parser.add_argument("-v", "--version", action="store_true")
@@ -358,7 +359,7 @@ def run():
     # 3. SAFE PARSING
     try:
         args, unknown = parser.parse_known_args()
-    except:
+    except Exception:
         sys.exit(0)
 
     # 4. SMART ROUTING FIX
