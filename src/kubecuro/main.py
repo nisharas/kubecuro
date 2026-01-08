@@ -381,7 +381,10 @@ def run():
     # --- 5. FALLBACK / NO ARGUMENTS ---
     # If no command was provided and no flags were set, just show the help and exit
     if not command and not args.version:
-        parser.print_help()
+        if "show_help" in globals():
+            show_help()  # This brings back the logo, colors, and ASCII
+        else:
+            parser.print_help() 
         sys.exit(0)
         
     # --- 6. EXECUTION ---
