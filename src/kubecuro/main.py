@@ -338,10 +338,15 @@ def run():
 
     # FIX: This tells argcomplete "Look here for commands"
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+
+    # FIX: Define specific parsers for scan and fix so they can take a path
+    scan_p = subparsers.add_parser("scan", help="Scan resources")
+    scan_p.add_argument("target", nargs="?", help="Path to file or directory")
+
+    fix_p = subparsers.add_parser("fix", help="Apply fixes")
+    fix_p.add_argument("target", nargs="?", help="Path to file or directory")
   
     # FIX: Added help strings. Some shell completion engines use these to show hints
-    subparsers.add_parser("scan", help="Scan resources")
-    subparsers.add_parser("fix", help="Apply fixes")
     subparsers.add_parser("baseline", help="Manage baseline")
     subparsers.add_parser("checklist", help="Show checklist")
     subparsers.add_parser("version", help="Print version")
