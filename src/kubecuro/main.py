@@ -322,11 +322,18 @@ def show_resolution_guide(issues):
 def run():
     # 1. SETUP THE PARSER
     parser = argparse.ArgumentParser(prog="kubecuro", add_help=False)
+    
+    # SILENCE ARGPARSE ERRORS during completion probes
+    # This prevents the "usage: kubecuro..." dump in your terminal
+    if "_ARGCOMPLETE" in os.environ or "COMP_LINE" in os.environ:
+        def silent_error(message): sys.exit(0)
+        parser.error = silent_error
+
     parser.add_argument("-v", "--version", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("-y", "--yes", action="store_true", help="Auto-accept all fixes without prompting")
-    parser.add_argument("--all", action="store_true", help="Override baseline to show all technical debt")
+    parser.add_argument("-y", "--yes", action="store_true")
+    parser.add_argument("--all", action="store_true")
     
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("scan").add_argument("target", nargs="?")
@@ -336,29 +343,38 @@ def run():
     subparsers.add_parser("version")
     
     explain_p = subparsers.add_parser("explain")
-    explain_p.add_argument(
-        "resource", 
-        nargs="?", 
-        help="Resource keyword (hpa, rbac, etc.) or path to a YAML file"
-    )
+    explain_p.add_argument("resource", nargs="?")
 
     subparsers.add_parser("completion").add_argument("shell", choices=["bash", "zsh"])
 
-    # 2. THE MAGIC GATEKEEPER
-    # If the shell is hitting TAB, this function sends the info and EXITS the script.
+    # 2. THE GATEKEEPER (Must run before any logic)
+    argcomplete.autocomplete(parser)
     if "_ARGCOMPLETE" in os.environ:
-        argcomplete.autocomplete(parser)
         sys.exit(0)
 
     # 3. SAFE PARSING
-    # We use parse_known_args to avoid crashing on weird shell-injected strings
     try:
         args, unknown = parser.parse_known_args()
-    except Exception:
-        # If we still get a weird parsing error during a background check, just exit
+    except:
         sys.exit(0)
 
-    start_time = time.time() 
+    # 4. SMART ROUTING FIX
+    # If no command, check if the first unknown arg is a valid command/file
+    # This prevents 'kubecuro' from being treated as a file during completion
+    command = args.command
+    target = getattr(args, 'target', None)
+
+    if not command and unknown:
+        if unknown[0] in ["scan", "fix", "baseline", "explain", "checklist"]:
+            command = unknown[0]
+            target = unknown[1] if len(unknown) > 1 else None
+        elif os.path.exists(unknown[0]):
+            command = "scan"
+            target = unknown[0]
+
+    # --- 5. EXECUTION ---
+    start_time = time.time()
+    # ... rest of your logo and logic code ...
     logo_path = resource_path("assets/KubeCuro-Logo.png")
     if not os.path.exists(logo_path):
         log.debug(f"⚠️ UI Asset missing at {logo_path}")
