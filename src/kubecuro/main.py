@@ -189,7 +189,7 @@ def show_help():
     cmd_table.add_row("  [bold cyan]scan[/bold cyan]", "Analyze manifests for logic errors (Read-only)")
     cmd_table.add_row("  [bold cyan]fix[/bold cyan]", "Automatically repair syntax and API deprecations")
     cmd_table.add_row("  [bold cyan]explain[/bold cyan]", "Learn the reasoning behind specific rules or resources. (e.g., explain hpa)")
-    cmd_table.add_row("  [bold]baseline[/bold]   Suppress current issues to focus on new technical debt.")
+    cmd_table.add_row("  [bold cyan]baseline[/bold cyan]",   "Suppress current issues to focus on new technical debt.")
     cmd_table.add_row("  [bold cyan]checklist[/bold cyan]", "Show all active logic rules")
     cmd_table.add_row("  [bold cyan]completion[/bold cyan]", "Setup tab-autocompletion for your shell (bash/zsh)")
     help_console.print(cmd_table)
