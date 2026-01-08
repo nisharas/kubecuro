@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import logging
 """
 --------------------------------------------------------------------------------
 AUTHOR:         Nishar A Sunkesala / FixMyK8s
@@ -10,7 +11,10 @@ PURPOSE:         The Shield Engine: API Deprecation, Resource Stability,
 class Shield:
     """The Stability Engine: Protects against outdated APIs, insecure RBAC, and misconfigured HPA logic."""
     
-    # Comprehensive Database of retired/deprecated APIs
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+    
+    # Comprehensive Database of retired/deprecated APIs (unchanged)
     DEPRECATIONS = {
         "extensions/v1beta1": {
             "Ingress": "networking.k8s.io/v1",
@@ -31,7 +35,9 @@ class Shield:
         "storage.k8s.io/v1beta1": "storage.k8s.io/v1",
         "scheduling.k8s.io/v1beta1": "scheduling.k8s.io/v1",
         "node.k8s.io/v1beta1": "node.k8s.io/v1",
-        "discovery.k8s.io/v1beta1": "discovery.k8s.io/v1"
+        "discovery.k8s.io/v1beta1": "discovery.k8s.io/v1",
+        "flowcontrol.apiserver.k8s.io/v1beta2": "flowcontrol.apiserver.k8s.io/v1beta3",
+        "apiregistration.k8s.io/v1beta1": "apiregistration.k8s.io/v1"
     }
 
     def get_line(self, doc, key=None):
@@ -51,10 +57,9 @@ class Shield:
             return 1
 
     def scan(self, doc: dict, all_docs: list = None) -> list:
-        """Main entry point: Runs security, stability, and networking checks."""
-        findings = []
         if not doc or not isinstance(doc, dict):
-            return findings
+            self.logger.debug("Empty or invalid document skipped")
+            return []
 
         base_line = self.get_line(doc)
         raw_findings = []
@@ -65,7 +70,7 @@ class Shield:
         # 2. RBAC Specific Security Checks
         raw_findings.extend(self.check_rbac_security(doc))
 
-        # 3. RESOURCE LIMITS (Fix 5 applied here)
+        # 3. RESOURCE LIMITS
         raw_findings.extend(self.check_limits(doc))
         
         # 4. Cross-Resource Logic (HPA & Ingress)
@@ -77,10 +82,9 @@ class Shield:
         for f in raw_findings:
             if 'line' not in f or f['line'] is None or f['line'] <= 0:
                 f['line'] = base_line
-            findings.append(f)
-            
-        return findings
-
+        
+        return raw_findings  # ✅ FIXED: Return raw_findings
+       
     def check_limits(self, doc):
         """Fix 5: Detects missing resource limits to prevent OOMKills."""
         findings = []
@@ -103,44 +107,47 @@ class Shield:
     def check_ingress_service_alignment(self, doc, all_docs):
         """Checks if Ingress backends point to valid Services and Ports."""
         findings = []
-        if doc.get('kind') == 'Ingress':
-            ingress_name = doc.get('metadata', {}).get('name', 'unknown')
-            ingress_ns = doc.get('metadata', {}).get('namespace', 'default')
-            spec = doc.get('spec', {}) or {}
+        if doc.get('kind') != 'Ingress':
+            return findings
             
-            for rule in spec.get('rules', []):
-                http = rule.get('http', {}) or {}
-                for path in http.get('paths', []):
-                    backend = path.get('backend', {}) or {}
-                    svc_node = backend.get('service', backend) 
-                    target_svc = svc_node.get('name') or backend.get('serviceName')
-                    
-                    port_node = svc_node.get('port', {})
-                    target_port = port_node.get('number') if isinstance(port_node, dict) else port_node
-
-                    if not target_svc: continue
-
-                    matched_svc = next((d for d in all_docs if d.get('kind') == 'Service' 
-                                       and d.get('metadata', {}).get('name') == target_svc
-                                       and d.get('metadata', {}).get('namespace', 'default') == ingress_ns), None)
-
-                    if matched_svc:
-                        svc_ports = [p.get('port') for p in matched_svc.get('spec', {}).get('ports', []) if p.get('port')]
-                        if target_port and target_port not in svc_ports:
-                            findings.append({
-                                "code": "INGRESS_PORT_MISMATCH",
-                                "severity": "🔴 CRITICAL",
-                                "msg": f"Ingress '{ingress_name}' points to port {target_port}, but Service '{target_svc}' only exposes {svc_ports}.",
-                                "line": self.get_line(path)
-                            })
-                    else:
-                        if len(all_docs) > 1:
-                            findings.append({
-                                "code": "INGRESS_ORPHAN",
-                                "severity": "🟠 WARNING",
-                                "msg": f"Ingress '{ingress_name}' points to Service '{target_svc}', but that Service was not found in this scan context.",
-                                "line": self.get_line(path)
-                            })
+        ingress_name = doc.get('metadata', {}).get('name', 'unknown')
+        ingress_ns = doc.get('metadata', {}).get('namespace', 'default')
+        spec = doc.get('spec', {}) or {}
+        
+        for rule in spec.get('rules', []):
+            http = rule.get('http', {}) or {}
+            for path in http.get('paths', []):
+                backend = path.get('backend', {}) or {}
+                svc_node = backend.get('service', backend) 
+                target_svc = svc_node.get('name') or backend.get('serviceName')
+                
+                port_node = svc_node.get('port', {})
+                target_port = port_node.get('number') if isinstance(port_node, dict) else port_node
+    
+                if not target_svc: 
+                    continue
+    
+                matched_svc = next((d for d in all_docs if d.get('kind') == 'Service' 
+                                   and d.get('metadata', {}).get('name') == target_svc
+                                   and d.get('metadata', {}).get('namespace', 'default') == ingress_ns), None)
+    
+                if matched_svc:
+                    svc_ports = [p.get('port') for p in matched_svc.get('spec', {}).get('ports', []) if p.get('port')]
+                    if target_port and target_port not in svc_ports:
+                        findings.append({
+                            "code": "INGRESS_PORT_MISMATCH",
+                            "severity": "🔴 CRITICAL",
+                            "msg": f"Ingress '{ingress_name}' points to port {target_port}, but Service '{target_svc}' only exposes {svc_ports}.",
+                            "line": self.get_line(doc)  # ✅ FIXED: Use doc (Ingress root)
+                        })
+                else:
+                    if len(all_docs) > 1:
+                        findings.append({
+                            "code": "INGRESS_ORPHAN",
+                            "severity": "🟠 WARNING",
+                            "msg": f"Ingress '{ingress_name}' points to Service '{target_svc}', but that Service was not found in this scan context.",
+                            "line": self.get_line(doc)  # ✅ FIXED: Use doc (Ingress root)
+                        })
         return findings
 
     def check_version_and_security(self, doc: dict) -> list:
