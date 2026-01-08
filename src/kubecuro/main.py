@@ -321,7 +321,7 @@ def show_resolution_guide(issues):
 
 def run():
     # 1. SETUP THE PARSER
-    parser = argparse.ArgumentParser(prog="kubecuro", add_help=True)
+    parser = argparse.ArgumentParser(prog="kubecuro", add_help=False)
     
     # SILENCE ARGPARSE ERRORS only when probing
     if "COMP_LINE" in os.environ:
