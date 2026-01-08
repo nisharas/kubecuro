@@ -325,7 +325,6 @@ class AuditEngine:
         console.print(f"[green]✅ FIXED: {fpath.name}[/]")
 
 def create_parser() -> argparse.ArgumentParser:
-    """CNCF-Grade parser with proper help."""
     parser = argparse.ArgumentParser(
         prog="kubecuro",
         description="Kubernetes Logic Diagnostics & YAML Healer",
@@ -333,7 +332,7 @@ def create_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   kubecuro scan ./manifests/
-  kubecuro fix deployment.yaml --dry-run
+  kubecuro fix deployment.yaml --dry-run  
   kubecuro explain hpa
   kubecuro checklist"""
     )
@@ -345,25 +344,26 @@ Examples:
     
     subparsers = parser.add_subparsers(dest="command", metavar="command")
     
-    # Scan command
-    scan_p = subparsers.add_parser("scan", help="Analyze YAML logic (read-only)")
-    scan_p.add_argument("target", nargs="?", help="Path to scan")
+    # Core commands
+    scan_p = subparsers.add_parser("scan", help="Analyze YAML logic")
+    scan_p.add_argument("target", nargs="?")
     
-    # Fix command  
     fix_p = subparsers.add_parser("fix", help="Auto-repair YAML files")
-    fix_p.add_argument("target", nargs="?", help="Path to fix")
+    fix_p.add_argument("target", nargs="?")
     
-    # Utility commands
+    # Utility commands (NO DUPLICATES!)
     subparsers.add_parser("baseline", help="Suppress current issues")
     subparsers.add_parser("checklist", help="Show all rules")
-    subparsers.add_parser("explain", help="Explain rules/resources")
-    explain_p = subparsers.add_parser("explain", help="Explain a rule")
+    
+    # SINGLE explain command
+    explain_p = subparsers.add_parser("explain", help="Explain rules/resources")
     explain_p.add_argument("resource", nargs="?")
-    subparsers.add_parser("completion", help="Shell completion")
-    completion_p = subparsers.add_parser("completion")
+    
+    completion_p = subparsers.add_parser("completion", help="Shell completion")
     completion_p.add_argument("shell", choices=["bash", "zsh"], nargs="?")
     
     return parser
+
 
 def main():
     """Entry point - CNCF kubectl pattern."""
