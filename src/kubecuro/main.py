@@ -182,7 +182,7 @@ def show_help():
     ))
     
     help_console.print("\n[bold yellow]Usage:[/bold yellow]")
-    help_console.print("  [bold cyan]kubecuro[/bold cyan] [command] [target] [options]")
+    help_console.print(f"  [bold cyan]kubecuro[/bold cyan] [green]<command>[/green] [white]<target>[/white] [dim][options][/dim]")
    
     help_console.print("\n[bold yellow]Main Commands:[/bold yellow]")
     cmd_table = Table(show_header=False, box=None, padding=(0, 2))
@@ -217,7 +217,7 @@ def show_help():
     help_console.print("      kubecuro baseline ./manifests-folder/")
     help_console.print("\n  [dim]7. View all issues, including suppressed ones:[/dim]")
     help_console.print("      kubecuro scan ./manifests-folder/ --all")
-    
+    help_console.print("\n[dim]💡 Tip: Run 'kubecuro completion zsh' (or bash) to enable tab-autocompletion![/dim]")
     help_console.print("\n[italic white]Architecture: Static Binary / x86_64[/italic white]\n")
 
 def show_checklist():
