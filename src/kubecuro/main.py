@@ -334,15 +334,18 @@ def run():
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("-y", "--yes", action="store_true")
     parser.add_argument("--all", action="store_true")
+
+    # FIX: This tells argcomplete "Look here for commands"
+    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+  
+    # FIX: Added help strings. Some shell completion engines use these to show hints
+    subparsers.add_parser("scan", help="Scan resources")
+    subparsers.add_parser("fix", help="Apply fixes")
+    subparsers.add_parser("baseline", help="Manage baseline")
+    subparsers.add_parser("checklist", help="Show checklist")
+    subparsers.add_parser("version", help="Print version")
     
-    subparsers = parser.add_subparsers(dest="command")
-    subparsers.add_parser("scan").add_argument("target", nargs="?")
-    subparsers.add_parser("fix").add_argument("target", nargs="?")
-    subparsers.add_parser("baseline").add_argument("target", nargs="?")
-    subparsers.add_parser("checklist")
-    subparsers.add_parser("version")
-    
-    explain_p = subparsers.add_parser("explain")
+    explain_p = subparsers.add_parser("explain", help="Explain resource")
     explain_p.add_argument("resource", nargs="?")
 
     subparsers.add_parser("completion").add_argument("shell", choices=["bash", "zsh"])
@@ -374,7 +377,6 @@ def run():
 
     # --- 5. EXECUTION ---
     start_time = time.time()
-    # ... rest of your logo and logic code ...
     logo_path = resource_path("assets/KubeCuro-Logo.png")
     if not os.path.exists(logo_path):
         log.debug(f"⚠️ UI Asset missing at {logo_path}")
