@@ -537,9 +537,17 @@ def main():
     
     args, unknown = parser.parse_known_args()
     args.unknown = unknown
+
+    if args.command is None and not args.version:
+        parser.print_help()
+        sys.exit(0)
     
     cli = KubecuroCLI()
     cli.run(args)
+
+def run():
+    """Entrypoint for the console script."""
+    main()
 
 if __name__ == "__main__":
     main()
