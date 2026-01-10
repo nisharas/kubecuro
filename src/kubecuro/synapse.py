@@ -2,14 +2,14 @@
 """
 --------------------------------------------------------------------------------
 AUTHOR:      Nishar A Sunkesala / FixMyK8s
-PURPOSE:      The Synapse Engine: Maps cross-resource logic gaps (Fully Expanded).
+PURPOSE:      The Synapse Engine: Maps cross-resource logic gaps.
 --------------------------------------------------------------------------------
 """
 import os
 from typing import List
 from ruamel.yaml import YAML
 
-# FIXED: Robust model import
+# Robust model import
 try:
     from kubecuro.models import AuditIssue
 except ImportError:
@@ -27,13 +27,13 @@ class Synapse:
         
         # Resource Registry
         self.all_docs = []
-        self.producers = []
-        self.workload_docs = []
-        self.consumers = []
-        self.ingresses = []
-        self.configs = []
-        self.hpas = []
-        self.netpols = []
+        self.producers = []      # Workloads (Deployments/Pods)
+        self.workload_docs = []  # Raw workload dicts for HPA audit
+        self.consumers = []      # Services
+        self.ingresses = []      # Ingress resources
+        self.configs = []        # ConfigMaps/Secrets
+        self.hpas = []           # HPAs
+        self.netpols = []        # Network Policies
 
     def get_line(self, doc, key=None):
         """Extract line from ruamel.yaml object (Shield-compatible)."""
@@ -45,7 +45,7 @@ class Synapse:
             if hasattr(doc, 'lc') and hasattr(doc.lc, 'line'):
                 return doc.lc.line + 1
             return 1
-        except:
+        except Exception:
             return 1
 
     def scan_file(self, file_path: str):
@@ -75,7 +75,7 @@ class Synapse:
                 ns = metadata.get('namespace', 'default')
                 spec = doc.get('spec', {}) or {}
 
-                # Workload Processing
+                # --- 1. Workload Processing (Deployments, Pods, etc.) ---
                 if kind in ['Deployment', 'Pod', 'StatefulSet', 'DaemonSet']:
                     self.workload_docs.append(doc)
                     is_pod = kind == 'Pod'
@@ -110,6 +110,7 @@ class Synapse:
                         'volumes': p_spec.get('volumes') or [], 'raw_doc': doc
                     })
 
+                # --- 2. Service Processing ---
                 elif kind == 'Service':
                     self.consumers.append({
                         'name': name, 'namespace': ns, 'file': fname,
@@ -119,6 +120,7 @@ class Synapse:
                         'raw_doc': doc
                     })
 
+                # --- 3. Other Resources ---
                 elif kind == 'Ingress':
                     self.ingresses.append({
                         'name': name, 'namespace': ns, 'file': fname,
@@ -144,20 +146,15 @@ class Synapse:
     def audit(self) -> List[AuditIssue]:
         """Complete correlation suite across manifest graph."""
         try:
-            from kubecuro.shield import Shield
+            from shield import Shield
         except ImportError:
-            try:
-                from shield import Shield
-            except ImportError:
-                Shield = None
-        
-        if not Shield:
             return []
             
         results = []
         shield = Shield()
 
-        # Shield individual audits
+        # --- A. DEEP SCAN (Shield logic) ---
+        # Runs individual resource audits (API version, Security Context, etc.)
         for doc in self.all_docs:
             findings = shield.scan(doc, self.all_docs)
             for f in findings:
@@ -168,11 +165,12 @@ class Synapse:
                     fix="Check manifest for compliance.", source="Shield"
                 ))
 
-        # GHOST SERVICE detection
+        # --- B. CROSS-RESOURCE CORRELATIONS (Synapse logic) ---
+
+        # 1. GHOST SERVICE: Service exists but selects no pods
         for svc in self.consumers:
             selector = svc.get('selector')
-            if not selector:
-                continue
+            if not selector: continue
                 
             matches = [p for p in self.producers 
                       if p['namespace'] == svc['namespace'] and 
@@ -180,14 +178,15 @@ class Synapse:
             
             if not matches:
                 results.append(AuditIssue(
-                    code="GHOST", severity="🔴 HIGH", file=svc['file'],
+                    code="GHOST", severity=shield.HIGH, file=svc['file'],
                     line=self.get_line(svc['raw_doc'], 'selector'),
                     message=f"GHOST SERVICE: Service '{svc['name']}' selector matches 0 pods.",
                     fix="Align Service 'spec.selector' with Deployment labels.",
                     source="Synapse"
                 ))
 
-        # Ingress -> Service validation (FIXED line numbers)
+        # 2. INGRESS -> SERVICE VALIDATION
+        # Validates that the Ingress points to a real service and correct port
         for ing in self.ingresses:
             rules = ing['spec'].get('rules') or []
             for rule in rules:
@@ -205,7 +204,7 @@ class Synapse:
                                     if s['name'] == s_name and s['namespace'] == ing['namespace']), None)
                         if not match:
                             results.append(AuditIssue(
-                                code="INGRESS_ORPHAN", severity="🔴 HIGH", 
+                                code="INGRESS_ORPHAN", severity=shield.HIGH, 
                                 file=ing['file'],
                                 line=self.get_line(ing['raw_doc'], 'spec'),
                                 message=f"Ingress backend references missing Service '{s_name}'.",
@@ -214,60 +213,49 @@ class Synapse:
                             ))
                         elif t_port:
                             s_ports = [p.get('port') for p in match.get('ports', [])]
-                            if t_port not in s_ports:
+                            # Check both numeric and named ports
+                            s_names = [p.get('name') for p in match.get('ports', [])]
+                            if t_port not in s_ports and t_port not in s_names:
                                 results.append(AuditIssue(
-                                    code="INGRESS_PORT_MISMATCH", severity="🔴 CRITICAL",
+                                    code="INGRESS_PORT_MISMATCH", severity=shield.CRITICAL,
                                     file=ing['file'],
                                     line=self.get_line(ing['raw_doc'], 'spec'),
-                                    message=f"Ingress targets port {t_port}, Service '{s_name}' exposes {s_ports}.",
-                                    fix=f"Update Ingress port to match: {s_ports}",
+                                    message=f"Ingress targets port {t_port}, Service '{s_name}' exposes {s_ports + s_names}.",
+                                    fix=f"Update Ingress port to match one of: {s_ports + s_names}",
                                     source="Synapse"
                                 ))
 
-        # Volume mount consistency
+        # 3. VOLUME MOUNT CONSISTENCY
         for p in self.producers:
             for vol in p.get('volumes') or []:
                 ref = None
-                if 'configMap' in vol: 
-                    ref = vol['configMap'].get('name')
-                if 'secret' in vol: 
-                    ref = vol['secret'].get('secretName')
+                if 'configMap' in vol: ref = vol['configMap'].get('name')
+                if 'secret' in vol: ref = vol['secret'].get('secretName')
                 
-                if ref and not any(c['name'] == ref and c['namespace'] == p['namespace'] 
-                                 for c in self.configs):
+                if ref and not any(c['name'] == ref and c['namespace'] == p['namespace'] for c in self.configs):
                     results.append(AuditIssue(
-                        code="VOL_MISSING", severity="🟠 MED", file=p['file'],
+                        code="VOL_MISSING", severity=shield.MEDIUM, file=p['file'],
                         line=self.get_line(p['raw_doc'], 'spec'),
                         message=f"Workload '{p['name']}' mounts missing '{ref}'.",
                         fix="Define ConfigMap/Secret in same namespace.",
                         source="Synapse"
                     ))
 
-        # HPA validation (piped to Shield)
-        for hpa in self.hpas:
-            hpa_errors = shield.audit_hpa(hpa['doc'], self.workload_docs)
-            for err in hpa_errors:
-                results.append(AuditIssue(
-                    code=err['code'], severity=err['severity'], 
-                    file=hpa['file'], message=err['msg'], 
-                    line=err.get('line'), fix="Add CPU/Memory requests to workload.",
-                    source="Shield"
-                ))
-
-        # Probe port integrity
+        # 4. PROBE PORT INTEGRITY
         for p in self.producers:
             for probe in p.get('probes'):
                 valid_ports = [str(x) for x in p['ports']]
                 if probe['port'] and probe['port'] not in valid_ports:
                     results.append(AuditIssue(
-                        code="PROBE_GAP", severity="🟠 MED", file=p['file'],
+                        code="PROBE_GAP", severity=shield.MEDIUM, file=p['file'],
                         line=self.get_line(p['raw_doc'], 'spec'),
                         message=f"Probe targets port '{probe['port']}' not in containerPorts.",
                         fix="Expose probe port in container 'ports' section.",
                         source="Synapse"
                     ))
 
-        # Service -> Workload port alignment
+        # 5. SERVICE -> WORKLOAD PORT ALIGNMENT
+        
         for svc in self.consumers:
             for p in self.producers:
                 if p['namespace'] == svc['namespace'] and svc['selector'].items() <= p['labels'].items():
@@ -275,7 +263,7 @@ class Synapse:
                         target = s_port.get('targetPort')
                         if target and str(target) not in p['ports']:
                             results.append(AuditIssue(
-                                code="PORT_MISMATCH", severity="🟠 MED", 
+                                code="PORT_MISMATCH", severity=shield.MEDIUM, 
                                 file=svc['file'],
                                 line=self.get_line(svc['raw_doc'], 'spec'),
                                 message=f"Service '{svc['name']}' targets port {target}, workload '{p['name']}' missing it.",
