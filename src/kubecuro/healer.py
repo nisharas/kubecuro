@@ -52,7 +52,7 @@ class Healer:
         except Exception:
             return 1
 
-    def apply_security_patches(self, doc: dict, kind: str, global_line_offset: int = 0) -> None:
+    def apply_security_patches(self, doc: dict, kind: str, global_line_offset: int = 0, apply_defaults: bool = False) -> None:
         """Standard Security Hardening & Stability Patching with accurate line numbers."""
         if not isinstance(doc, dict): 
             return
@@ -87,36 +87,47 @@ class Healer:
         containers = t_spec.get('containers', [])
         if isinstance(containers, list):
             for c in containers:
-                if not isinstance(c, dict): 
-                    continue
+                container_name = c.get('name', 'unknown')
+                relative_line = self.get_line(c)
+                actual_line = global_line_offset + (relative_line - 1)
                 
-                container_line = self.get_line(c)
-                
-                # --- FIX: OOM_RISK (Missing Resource Limits) ---
+                # --- OOM_RISK (Resource Limits) ---
                 res = c.get('resources', {})
                 if 'limits' not in res:
-                    # Initialize resources if totally missing
-                    if 'resources' not in c:
-                        c['resources'] = {}
-                    
-                    # Inject conservative default limits (ruamel-compatible)
-                    c['resources']['limits'] = {
-                        'cpu': '500m',
-                        'memory': '256Mi'
-                    }
-                    self.detected_codes.add(f"OOM_RISK:{container_line}")
+                    if apply_defaults:
+                        # 1. Apply the conservative defaults
+                        if 'resources' not in c:
+                            c['resources'] = {}
+                        
+                        c['resources']['limits'] = {
+                            'cpu': '500m',
+                            'memory': '256Mi'
+                        }
+                        
+                        # 2. Add the warning message as a comment (ruamel.yaml supports this)
+                        # This informs the admin that these are placeholder values
+                        msg = f"FIXED: Default limits applied for {container_name}. Admin MUST tune these to app needs."
+                        self.detected_codes.add(f"OOM_FIXED:{actual_line}")
+                        logger.info(f"[{kind}] {msg}")
+                    else:
+                        # Just flag it if apply_defaults is False
+                        self.detected_codes.add(f"OOM_RISK:{actual_line}")
 
-                # --- FIX: SEC_PRIVILEGED ---
+                # --- SEC_PRIVILEGED ---
                 s_ctx = c.get('securityContext', {})
                 if isinstance(s_ctx, dict) and s_ctx.get('privileged') is True:
-                    s_ctx['privileged'] = False
-                    self.detected_codes.add(f"SEC_PRIVILEGED:{container_line}")
+                    if apply_defaults:
+                        s_ctx['privileged'] = False
+                        self.detected_codes.add(f"SEC_PRIVILEGED_FIXED:{actual_line}")
+                    else:
+                        self.detected_codes.add(f"SEC_PRIVILEGED_RISK:{actual_line}")
 
     def heal_file(self, 
                   file_path: str, 
                   apply_fixes: bool = True, 
+                  apply_defaults: bool = False,  # ADDED: Confirmation gate
                   dry_run: bool = False, 
-                  return_content: bool = False) -> Tuple[Optional[str], Set[str]]:
+                  return_content: bool = False) -> Tuple[Union[bool, Optional[str]], Set[str]]:
         """Heal YAML file with accurate line tracking and full type safety."""
         try:
             if not os.path.exists(file_path): 
@@ -125,36 +136,30 @@ class Healer:
             with open(file_path, 'r') as f:
                 original_content = f.read()
 
-            # Refined split to avoid splitting on comments containing ---
             raw_docs = re.split(r'^---\s*$', original_content, flags=re.MULTILINE)
             healed_parts = []
             self.detected_codes = set()
             
-            # Track cumulative line numbers for multi-doc reporting
             current_line_offset = 1 if not original_content.startswith("---") else 2
 
             for doc_str in raw_docs:
                 if not doc_str.strip(): 
-                    # Maintain line count even for empty chunks
                     actual_lines = len(doc_str.splitlines())
                     current_line_offset += actual_lines + 1
                     continue
 
-                # Syntax Repair Logic - Conservative cleanup
+                # Syntax Repair Logic
                 d = doc_str.replace('\t', '    ')
-                # Ensure keys have spaces after colons: 'key:value' -> 'key: value'
                 d = re.sub(r'^(?![ \t]*#)([ \t]*[\w.-]+):(?!\s|$)', r'\1: ', d, flags=re.MULTILINE)
 
                 try:
-                    # Parse the document
                     parsed = self.yaml.load(d)
                     if parsed and isinstance(parsed, dict):
                         kind = parsed.get('kind')
                         api = parsed.get('apiVersion')
 
-                        # API Migration Logic using Shield's catalog
+                        # API Migration Logic
                         if self.shield and api and api in self.shield.DEPRECATIONS:
-                            # FIND EXACT LINE NUMBER WITHIN THIS DOC
                             doc_lines = doc_str.splitlines()
                             relative_line = 1
                             for i, line in enumerate(doc_lines):
@@ -162,19 +167,17 @@ class Healer:
                                     relative_line = i + 1
                                     break
                             
-                            # Calculate global line number
                             global_line = current_line_offset + (relative_line - 1)
                             self.detected_codes.add(f"API_DEPRECATED:{global_line}")
                             
                             if apply_fixes:
                                 mapping = self.shield.DEPRECATIONS[api]
-                                # Handle dict mapping vs string mapping
                                 new_api = mapping.get(kind, mapping.get("default")) if isinstance(mapping, dict) else mapping
                                 if new_api and not str(new_api).startswith("REMOVED"):
                                     parsed['apiVersion'] = new_api
 
-                        # Apply security audits/patches (Passing the current line offset for better reporting)
-                        self.apply_security_patches(parsed, kind, global_line_offset=current_line_offset)
+                        # UPDATED: Pass apply_defaults to the patcher
+                        self.apply_security_patches(parsed, kind, global_line_offset=current_line_offset, apply_defaults=apply_defaults)
 
                         buf = StringIO()
                         self.yaml.dump(parsed, buf)
@@ -183,21 +186,16 @@ class Healer:
                         healed_parts.append(doc_str.strip())
                 except Exception as e:
                     logger.warning(f"Failed to parse YAML doc in {file_path}: {e}")
-                    # If parsing fails, keep the original doc fragment
                     healed_parts.append(doc_str.strip())
                 
-                # Update offset for next document: actual lines + separator
                 actual_lines = len(doc_str.splitlines())
                 current_line_offset += actual_lines + 1
 
             if not healed_parts: 
                 return (None if return_content else False, set())
 
-            # Reconstruct the file
             prefix = "---\n" if original_content.startswith("---") else ""
             healed_final = prefix + "\n---\n".join(healed_parts) + "\n"
-
-            # Check if text actually changed (ignoring surrounding whitespace)
             content_changed = original_content.strip() != healed_final.strip()
 
             if return_content:
@@ -212,14 +210,21 @@ class Healer:
         except Exception as e:
             logger.error(f"Heal failed for {file_path}: {e}")
             return (None if return_content else False, set())
-
+    
 def linter_engine(file_path: str, 
                   apply_api_fixes: bool = True, 
+                  apply_defaults: bool = False,  # UPDATED: New parameter
                   dry_run: bool = False, 
-                  return_content: bool = False) -> Tuple[Optional[str], Set[str]]:
-    """Public entrypoint for main.py integration."""
+                  return_content: bool = False) -> Tuple[Union[bool, Optional[str]], Set[str]]:
+    """Public entrypoint for main.py integration with confirmation support."""
     h = Healer()
-    return h.heal_file(file_path, apply_api_fixes, dry_run, return_content)
+    return h.heal_file(
+        file_path=file_path, 
+        apply_fixes=apply_api_fixes, 
+        apply_defaults=apply_defaults, 
+        dry_run=dry_run, 
+        return_content=return_content
+    )
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
