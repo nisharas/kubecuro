@@ -518,25 +518,26 @@ def create_parser() -> argparse.ArgumentParser:
     # By setting metavar="COMMAND", the label becomes uppercase
     subparsers = parser.add_subparsers(
         dest="command", 
-        metavar="COMMAND", 
+        metavar="Command", 
         title=pos_title
     )
     
     # Core commands WITH target args
-    scan_p = subparsers.add_parser("scan", help="🔍 Deep YAML logic analysis")
+    # Use \u00A0 (Non-breaking space) for a guaranteed gap
+    scan_p = subparsers.add_parser("scan", help="🔍\u00A0 Deep YAML logic analysis")
     scan_p.add_argument("target", nargs="?", help="Path to scan")
     
-    fix_p = subparsers.add_parser("fix", help="❤️  Auto-heal YAML files")
+    fix_p = subparsers.add_parser("fix", help="❤️\u00A0 Auto-heal YAML files")
     fix_p.add_argument("target", nargs="?", help="Path to fix")
     
     # Power-user commands
-    subparsers.add_parser("baseline", help="🛡️  Suppress known issues")
-    subparsers.add_parser("checklist", help="📋 Show all rules")
+    subparsers.add_parser("baseline", help="🛡️\u00A0 Suppress known issues")
+    subparsers.add_parser("checklist", help="📋\u00A0 Show all rules")
     
-    explain_p = subparsers.add_parser("explain", help="💡 Explain rules")
+    explain_p = subparsers.add_parser("explain", help="💡\u00A0 Explain rules")
     explain_p.add_argument("resource", nargs="?", help="Rule name")
     
-    completion_p = subparsers.add_parser("completion", help="🎩 Shell tab completion")
+    completion_p = subparsers.add_parser("completion", help="🎩\u00A0 Shell tab completion")
     completion_p.add_argument("shell", nargs="?", choices=["bash", "zsh"])
     
     return parser
