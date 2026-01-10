@@ -54,12 +54,38 @@ class Config:
     BACKUP_SUFFIX: str = ".yaml.backup"
     EMOJIS: Dict[str, str] = None
 
+    RULES_REGISTRY = {
+    "NETWORKING": {
+        "SVC_PORT_MISS": ("Service targetPort matches containerPort", "❤️", "Services pointing to non-existent ports cause 503s. Ensure targetPort matches a named port or number in the Deployment."),
+        "GHOST_SELECT": ("Service selectors match labels", "❌", "Orphaned Services. The selector labels must exist on the Pod template of the target resource."),
+        "INGRESS_TLS": ("Ingress has TLS configured", "❤️", "Production Ingress should define a tls: section with a secretName."),
+    },
+    "SCALING": {
+        "HPA_MISS_REQ": ("HPA has resource requests", "❤️", "HPAs cannot scale on CPU/Memory if the Deployment doesn't define resource.requests."),
+        "HPA_MAX_LIMIT": ("HPA maxReplicas > minReplicas", "❤️", "Setting min=max prevents scaling and wastes HPA controller cycles."),
+        "VPA_HPA_CONFLICT": ("No VPA/HPA on same resource", "❌", "VPA and HPA both controlling CPU/Mem will cause thrashing (flapping)."),
+    },
+    "SECURITY": {
+        "RBAC_WILD_RES": ("RBAC avoids '*' resources", "❌", "Wildcards in RBAC are a security risk. Specify exact resources like 'pods' or 'secrets'."),
+        "PRIV_ESC_TRUE": ("AllowPrivilegeEscalation: false", "❤️", "Container should explicitly set allowPrivilegeEscalation: false to prevent root exploits."),
+        "ROOT_USER_UID": ("RunAsNonRoot: true", "❤️", "Containers should not run as UID 0. Set runAsNonRoot: true in securityContext."),
+    },
+    "RESILIENCE": {
+        "LIVENESS_MISS": ("Liveness probe defined", "❤️", "Kubelet needs liveness probes to restart hung containers."),
+        "READINESS_MISS": ("Readiness probe defined", "❤️", "Readiness probes prevent traffic from hitting uninitialized pods."),
+        "REPLICA_COUNT": ("Replicas > 1 for HA", "❤️", "Single-replica deployments cause downtime during node maintenance."),
+    }
+}
+
+
     def __post_init__(self):
-        self.EMOJIS = {
-            "scan": "🔍", "fix": "❤️", "explain": "💡", "checklist": "📋", 
-            "baseline": "🛡️", "health_perfect": "🟢", "health_good": "🟡", 
-            "health_warning": "🟠", "health_critical": "🔴"
-        }
+            # Using \u00A0 ensures the S-Tier "Clean" look in all terminals
+            self.EMOJIS = {
+                "scan": "🔍\u00A0", "fix": "❤️\u00A0", "explain": "💡\u00A0", 
+                "checklist": "📋\u00A0", "baseline": "🛡️\u00A0", 
+                "health_perfect": "🟢\u00A0", "health_good": "🟡\u00A0", 
+                "health_warning": "🟠\u00A0", "health_critical": "🔴\u00A0"
+            }
 
 CONFIG = Config()
 
@@ -160,69 +186,62 @@ class KubecuroCLI:
             f"[green]•[/] Test: [code]source <(register-python-argcomplete kubecuro)[/]\n"
             f"[green]•[/] Permanent: [code]echo 'eval \"$(register-python-argcomplete kubecuro)\"' >> {rc_file}[/]",
             title="🎩 Shell Magic", border_style="green"))
-    
+        
     def _show_checklist(self, args):
-        """Interactive rule showcase."""
-        rules = Columns([
-            Panel("[bold cyan]Service[/]\n[dim]👻 Ghost selectors\n🌐 Port mismatches", 
-                  title="🔗", style="cyan"),
-            Panel("[bold yellow]HPA[/]\n[dim]⚙️ Missing resources\n🎯 Invalid targets", 
-                  title="📈", style="yellow"),
-            Panel("[bold red]RBAC[/]\n[dim]⭐ Wildcards\n🔒 Secret reads", 
-                  title="🔐", style="red")
-        ])
-        console.print(Panel(rules, title="📋 KubeCuro Logic Arsenal", 
-                          subtitle="50+ Kubernetes Logic Rules", border_style="magenta"))
+        """Show a production-grade categorized rule showcase."""
+        table = Table(
+            title="📋  KubeCuro Logic Arsenal", 
+            box=Table.box.MINIMAL_DOUBLE_HEAD, # CNCF Clean Look
+            header_style="bold magenta",
+            expand=True,
+            border_style="dim"
+        )
+
+        table.add_column("Category", style="bold cyan", width=15)
+        table.add_column("Rule ID", style="bold yellow", width=18)
+        table.add_column("Logic Check Description", style="white")
+        table.add_column("Fix", justify="center", width=8)
+
+        for category, sub_rules in CONFIG.RULES_REGISTRY.items():
+            for rid, details in sub_rules.items():
+                desc, heal, _ = details
+                table.add_row(category, rid, desc, heal)
+            table.add_section() # Adds a divider between categories
+
+        console.print(table)
+        console.print(f"\n[dim] {CONFIG.EMOJIS['fix']} = Auto-heal supported | ❌ = Manual fix required[/]")
     
     def _handle_explain(self, args):
-        """Explain specific rules."""
-        explanations = {
-            "hpa": """```yaml
-apiVersion: autoscaling/v2
-spec:
-  scaleTargetRef:
-    kind: Deployment
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 50
-```""",
-            "service": """```yaml
-# Service selector MUST match Deployment labels
-service:
-  selector:
-    app: nginx
-
-deployment:
-  metadata:
-    labels:
-      app: nginx  # ← Exact match required
-```""",
-            "rbac": """```yaml
-# ❌ BAD: Wildcard access
-rules:
-- apiGroups: ['*']
-  resources: ['*']
-
-# ✅ GOOD: Principle of least privilege
-rules:
-- apiGroups: ['apps']
-  resources: ['deployments']
-  verbs: ['get', 'list']
-```"""
-        }
+        """Deep dive into a specific rule logic."""
+        search_id = getattr(args, 'resource', '').upper()
         
-        resource = getattr(args, 'resource', '').lower()
-        if resource in explanations:
+        rule_data = None
+        for cat in CONFIG.RULES_REGISTRY.values():
+            if search_id in cat:
+                rule_data = cat[search_id]
+                break
+
+        if rule_data:
+            desc, heal, long_info = rule_data
+            
+            # Create a professional layout for the explanation
+            content = Text()
+            content.append(f"\nID: ", style="bold yellow")
+            content.append(f"{search_id}\n")
+            content.append(f"Summary: ", style="bold cyan")
+            content.append(f"{desc}\n\n")
+            content.append(f"Logic: ", style="bold magenta")
+            content.append(long_info)
+
             console.print(Panel(
-                Syntax(explanations[resource], "yaml", line_numbers=True), 
-                title=f"💡 {resource.upper()} Deep Dive", 
-                border_style="cyan"))
+                content, 
+                title=f"{CONFIG.EMOJIS['explain']} Rule Deep Dive", 
+                border_style="bright_magenta",
+                padding=(1, 2)
+            ))
         else:
-            console.print("[bold red]Usage:[/] kubecuro explain [hpa|service|rbac]")
+            console.print(f"[bold red]✘ Unknown Rule ID: {search_id}[/]")
+            console.print("[dim]Hint: Use 'kubecuro checklist' to see valid IDs[/]")
     
     def _handle_baseline(self, args):
         """Handle baseline suppression."""
@@ -254,7 +273,11 @@ class AuditEngineV2:
     
     def execute(self, command: str):
         """Execute with S-Tier progress UX."""
-        title = f"{CONFIG.EMOJIS.get(command, '⚡')} KubeCuro {command.upper()}"
+        # Clean the command string to avoid key errors
+        cmd_key = command.lower().strip()
+        icon = CONFIG.EMOJIS.get(cmd_key, "⚡\u00A0")
+        
+        title = f"{icon} KubeCuro {command.upper()}"
         console.print(Panel(title, style="bold magenta", expand=True))
         
         issues = self.audit()
@@ -484,58 +507,54 @@ class AuditEngineV2:
 # S-TIER ARGUMENT PARSER (Production-grade)
 # ═══════════════════════════════════════════════
 def create_parser() -> argparse.ArgumentParser:
-    # Define colors for headings
-    # \033[1;35m is Bold Magenta | \033[1;36m is Bold Cyan
+    # 🎨 S-Tier Styling
     pos_title = "\033[1;35mPositional Arguments\033[0m"
     opt_title = "\033[1;36mOptions\033[0m"
     
+    # Use raw description to preserve our manual formatting in epilog
     parser = argparse.ArgumentParser(
         prog="kubecuro",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description="🔍 Kubernetes Logic Diagnostics & YAML Auto-Healer",
-        add_help=False,
-        epilog="""
-🛠️  Usage Examples:
-  kubecuro scan ./manifests/          # Deep logic analysis
-  kubecuro fix *.yaml -y              # Zero-downtime fixes  
-  kubecuro explain hpa                # Rule deep-dive
-  kubecuro checklist                  # 50+ rule showcase"""
+        description="🔍  Kubernetes Logic Diagnostics & YAML Auto-Healer",
+        add_help=False, # Manually adding to the Options group
+        epilog=f"""
+\033[1;33m🛠️  USAGE EXAMPLES:\033[0m
+  kubecuro scan ./manifests/           # Deep logic analysis
+  kubecuro fix *.yaml -y               # Zero-downtime fixes  
+  kubecuro explain hpa                 # Rule deep-dive
+  kubecuro checklist                   # 50+ rule showcase
+
+\033[1;32mLearn more:\033[0m https://github.com/nisharas/kubecuro"""
     )
 
-    # ✅ CUSTOMIZE HEADINGS
-    parser._positionals.title = "Positional Arguments"
-    parser._optionals.title = "Options"
-
-    # 1. Fix the "Options" heading and add global flags
+    # 1. Standardize Options Group (kubectl style)
     options_group = parser.add_argument_group(opt_title)
     options_group.add_argument("-h", "--help", action="help", help="show this help message and exit")
     options_group.add_argument("-v", "--version", action="store_true", help="Show version")
-    options_group.add_argument("--dry-run", action="store_true", help="Preview changes")
-    options_group.add_argument("-y", "--yes", action="store_true", help="Non-interactive")
-    options_group.add_argument("--all", action="store_true", help="Show baseline issues")
+    options_group.add_argument("--dry-run", action="store_true", help="Preview changes (no disk write)")
+    options_group.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompts")
+    options_group.add_argument("--all", action="store_true", help="Show baseline/suppressed issues")
 
-    # 2. Fix the "Positional Arguments" heading and "Command" casing
-    # By setting metavar="COMMAND", the label becomes uppercase
+    # 2. Standardize Commands Group
+    # Metavar="COMMAND" ensures it appears as uppercase in 'usage'
     subparsers = parser.add_subparsers(
         dest="command", 
-        metavar="Command", 
+        metavar="COMMAND", 
         title=pos_title
     )
     
-    # Core commands WITH target args
-    # Use \u00A0 (Non-breaking space) for a guaranteed gap
+    # Standardized help strings with consistent \u00A0 spacing
     scan_p = subparsers.add_parser("scan", help="🔍 Deep YAML logic analysis")
-    scan_p.add_argument("target", nargs="?", help="Path to scan")
+    scan_p.add_argument("target", nargs="?", help="Path to scan (default: current dir)")
     
     fix_p = subparsers.add_parser("fix", help="❤️\u00A0 Auto-heal YAML files")
     fix_p.add_argument("target", nargs="?", help="Path to fix")
     
-    # Power-user commands
     subparsers.add_parser("baseline", help="🛡️\u00A0 Suppress known issues")
-    subparsers.add_parser("checklist", help="📋 Show all rules")
+    subparsers.add_parser("checklist", help="📋 Show all logic rules")
     
-    explain_p = subparsers.add_parser("explain", help="💡 Explain rules")
-    explain_p.add_argument("resource", nargs="?", help="Rule name")
+    explain_p = subparsers.add_parser("explain", help="💡 Explain specific rules")
+    explain_p.add_argument("resource", nargs="?", help="Resource type (e.g., hpa, service, rbac)")
     
     completion_p = subparsers.add_parser("completion", help="🎩 Shell tab completion")
     completion_p.add_argument("shell", nargs="?", choices=["bash", "zsh"])
