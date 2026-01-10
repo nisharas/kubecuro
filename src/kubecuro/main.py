@@ -484,36 +484,53 @@ class AuditEngineV2:
 # S-TIER ARGUMENT PARSER (Production-grade)
 # ═══════════════════════════════════════════════
 def create_parser() -> argparse.ArgumentParser:
+    # Define colors for headings
+    # \033[1;35m is Bold Magenta | \033[1;36m is Bold Cyan
+    pos_title = "\033[1;35mPositional Arguments\033[0m"
+    opt_title = "\033[1;36mOptions\033[0m"
+    
     parser = argparse.ArgumentParser(
         prog="kubecuro",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description="🔍 Kubernetes Logic Diagnostics & Auto-Healer",
+        description="🔍 Kubernetes Logic Diagnostics & YAML Auto-Healer",
+        add_help=False,
         epilog="""
-🛠️  USAGE EXAMPLES:
-  kubecuro scan ./manifests/           # Deep logic analysis
+🛠️  Usage Examples:
+  kubecuro scan ./manifests/          # Deep logic analysis
   kubecuro fix *.yaml -y              # Zero-downtime fixes  
   kubecuro explain hpa                # Rule deep-dive
   kubecuro checklist                  # 50+ rule showcase"""
     )
-    
-    # Global flags (kubectl-style)
-    parser.add_argument("-v", "--version", action="store_true", help="Show version")
-    parser.add_argument("--dry-run", action="store_true", help="Preview changes")
-    parser.add_argument("-y", "--yes", action="store_true", help="Non-interactive")
-    parser.add_argument("--all", action="store_true", help="Show baseline issues")
-    
-    # Commands (tab completion ready)
-    subparsers = parser.add_subparsers(dest="command", metavar="command")
+
+    # ✅ CUSTOMIZE HEADINGS
+    parser._positionals.title = "Positional Arguments"
+    parser._optionals.title = "Options"
+
+    # 1. Fix the "Options" heading and add global flags
+    options_group = parser.add_argument_group(opt_title)
+    options_group.add_argument("-h", "--help", action="help", help="show this help message and exit")
+    options_group.add_argument("-v", "--version", action="store_true", help="Show version")
+    options_group.add_argument("--dry-run", action="store_true", help="Preview changes")
+    options_group.add_argument("-y", "--yes", action="store_true", help="Non-interactive")
+    options_group.add_argument("--all", action="store_true", help="Show baseline issues")
+
+    # 2. Fix the "Positional Arguments" heading and "Command" casing
+    # By setting metavar="COMMAND", the label becomes uppercase
+    subparsers = parser.add_subparsers(
+        dest="command", 
+        metavar="COMMAND", 
+        title=pos_title
+    )
     
     # Core commands WITH target args
     scan_p = subparsers.add_parser("scan", help="🔍 Deep YAML logic analysis")
     scan_p.add_argument("target", nargs="?", help="Path to scan")
     
-    fix_p = subparsers.add_parser("fix", help="❤️ Auto-heal YAML files")
+    fix_p = subparsers.add_parser("fix", help="❤️  Auto-heal YAML files")
     fix_p.add_argument("target", nargs="?", help="Path to fix")
     
     # Power-user commands
-    subparsers.add_parser("baseline", help="🛡️ Suppress known issues")
+    subparsers.add_parser("baseline", help="🛡️  Suppress known issues")
     subparsers.add_parser("checklist", help="📋 Show all rules")
     
     explain_p = subparsers.add_parser("explain", help="💡 Explain rules")
