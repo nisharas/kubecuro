@@ -15,7 +15,7 @@ def test_rbac_wildcard_detection(shield_engine):
     }
     # Use the unified scan method
     findings = shield_engine.scan(bad_rbac)
-    assert any(f['code'] == "RBAC_WILD" and f['severity'] == "🔴 HIGH" for f in findings)
+    assert any(f['code'] == "RBAC_WILD" and f['severity'] == "🟠 HIGH" for f in findings)
 
 def test_privileged_container_detection(shield_engine):
     """Verify that privileged containers are flagged"""
