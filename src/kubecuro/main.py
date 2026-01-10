@@ -32,6 +32,7 @@ from rich.layout import Layout
 from rich.text import Text
 from rich.columns import Columns
 from rich.traceback import install as rich_traceback
+from rich import box
 
 # Core Engine (unchanged)
 from kubecuro.healer import linter_engine
@@ -191,7 +192,7 @@ class KubecuroCLI:
         """Show a production-grade categorized rule showcase."""
         table = Table(
             title="📋  KubeCuro Logic Arsenal", 
-            box=Table.box.MINIMAL_DOUBLE_HEAD, # CNCF Clean Look
+            box=box.MINIMAL_DOUBLE_HEAD, # CNCF Clean Look
             header_style="bold magenta",
             expand=True,
             border_style="dim"
@@ -518,7 +519,7 @@ def create_parser() -> argparse.ArgumentParser:
         description="🔍  Kubernetes Logic Diagnostics & YAML Auto-Healer",
         add_help=False, # Manually adding to the Options group
         epilog=f"""
-\033[1;33m🛠️  USAGE EXAMPLES:\033[0m
+\033[1;33m🛠️  Usage Examples:\033[0m
   kubecuro scan ./manifests/           # Deep logic analysis
   kubecuro fix *.yaml -y               # Zero-downtime fixes  
   kubecuro explain hpa                 # Rule deep-dive
@@ -539,7 +540,7 @@ def create_parser() -> argparse.ArgumentParser:
     # Metavar="COMMAND" ensures it appears as uppercase in 'usage'
     subparsers = parser.add_subparsers(
         dest="command", 
-        metavar="COMMAND", 
+        metavar="Command", 
         title=pos_title
     )
     
