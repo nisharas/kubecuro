@@ -7,6 +7,7 @@ def shield_engine():
 
 def test_rbac_wildcard_detection(shield_engine):
     """Verify that global wildcards in RBAC are flagged as 🔴 HIGH"""
+    #findings = shield_engine.scan(bad_rbac)
     bad_rbac = {
         "kind": "ClusterRole",
         "apiVersion": "rbac.authorization.k8s.io/v1",
@@ -16,6 +17,8 @@ def test_rbac_wildcard_detection(shield_engine):
     # Use the unified scan method
     findings = shield_engine.scan(bad_rbac)
     assert any(f['code'] == "RBAC_WILD" and f['severity'] == "🟠 HIGH" for f in findings)
+    # This will never fail even if you change 🟠 to ⚠️
+    #assert any(f['code'] == "RBAC_WILD" and f['severity'] == Shield.HIGH for f in findings)
 
 def test_privileged_container_detection(shield_engine):
     """Verify that privileged containers are flagged"""
