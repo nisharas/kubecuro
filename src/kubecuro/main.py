@@ -742,7 +742,7 @@ class AuditEngineV2:
             f"[bold red]🔴 {len(high)} Critical[/]",
             f"[bold yellow]🟡 {len(med)} Warning[/]",
             f"[bold green]🟢 {len(low)} Info[/]"
-        ], spacing=4)
+        ])
     
         # 5. COMPONENT: DYNAMIC INSIGHT ENGINE
         if not issues:
