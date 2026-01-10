@@ -27,7 +27,6 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.live import Live
-from rich.progress import Progress, SpinnerColumn, TextColumn, MofNCompleteColumn
 from rich.logging import RichHandler
 from rich.markdown import Markdown
 from rich.syntax import Syntax
@@ -37,10 +36,17 @@ from rich.text import Text
 from rich.columns import Columns
 from rich.traceback import install as rich_traceback
 from rich import box
-from rich.panel import Panel
-from rich.table import Table
-from rich.progress import ProgressBar
 from rich.console import Group
+from rich.progress import (
+    Progress, 
+    SpinnerColumn, 
+    TextColumn, 
+    BarColumn, 
+    MofNCompleteColumn,
+    ProgressBar,
+    TaskProgressColumn,
+    TimeElapsedColumn
+)
 
 # Core Engine (unchanged)
 from kubecuro.healer import linter_engine
@@ -504,7 +510,9 @@ class AuditEngineV2:
                 SpinnerColumn(spinner_name="dots"),
                 TextColumn("[progress.description]{task.description}"),
                 BarColumn(bar_width=40, pulse_style="magenta"),
+                TaskProgressColumn(),  # Shows percentage
                 MofNCompleteColumn(),
+                TimeElapsedColumn(),   # 👈 Shows how long the scan took
                 console=console,
                 transient=True  # 👈 This makes the bar vanish before the tables print
             ) as progress:
