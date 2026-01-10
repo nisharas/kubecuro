@@ -774,7 +774,7 @@ class AuditEngineV2:
         
         dashboard_content = Group(
             metrics_grid,
-            Rule(style="dim", font_size=1),
+            Rule(style="dim"),
             severity_breakdown,
             Padding("", (1, 0)), # Spacer
             Panel(
