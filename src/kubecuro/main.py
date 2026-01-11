@@ -241,7 +241,7 @@ class KubecuroCLI:
         """AI-powered path resolution."""
         target_val = getattr(args, 'target', None)
         if target_val:
-            return Path(target_val)
+            return Path(target_val).resolve()
         
         # Smart fallback: check unknown args for valid paths
         if getattr(args, 'unknown', None):
@@ -251,7 +251,7 @@ class KubecuroCLI:
         
         # Default to current directory if command is scan/fix and no target provided
         if args.command in ["scan", "fix"]:
-            return Path.cwd()
+            return Path.cwd().resolve()
             
         return None
     
@@ -521,9 +521,10 @@ class AuditEngineV2:
                 task = progress.add_task(f"[cyan]Initializing audit...", total=len(files))
                 
                 for fpath in files:
-                    fname = fpath.name
+                    abs_fpath = fpath.resolve()
+                    fname = str(abs_fpath)
                     # ✅ Update description dynamically to show progress
-                    progress.update(task, description=f"[bold blue]Scanning:[/] [dim]{fname}[/]")
+                    progress.update(task, description=f"[bold blue]Scanning:[/] [dim]{fpath.name}[/]")
                     
                     syn.scan_file(str(fpath))
                     
@@ -547,7 +548,7 @@ class AuditEngineV2:
                     # Healer codes
                     if not os.getenv('PYTEST_CURRENT_TEST'):
                         try:
-                            _, codes = linter_engine(str(fpath), dry_run=True, return_content=True, apply_defaults=self.apply_defaults)
+                            _, codes = linter_engine(str(abs_fpath), dry_run=True, return_content=True, apply_defaults=self.apply_defaults)
                             for code in codes:
                                 parts = str(code).split(":")
                                 ccode = parts[0].upper()
@@ -555,11 +556,14 @@ class AuditEngineV2:
                                 ident = f"{fname}:{line}:{ccode}"
                                 
                                 # Custom message mapping
-                                msg = f"Healer: {ccode}"
-                                if ccode == "OOM_RISK":
+                                if ccode == "SYNTAX_ERROR":
+                                    msg = "CRITICAL: YAML Syntax error prevents logic analysis"
+                                elif ccode == "OOM_RISK":
                                     msg = "Container missing resource limits (Risk of OOMKill)"
                                 elif ccode == "OOM_FIXED":
                                     msg = "Conservative resource limits applied"
+                                else:
+                                    msg = f"Healer Recommendation: {ccode}"
                                     
                                 if ident not in seen:
                                     issues.append(AuditIssue(
@@ -570,9 +574,9 @@ class AuditEngineV2:
                                         line=line
                                     ))
                                     seen.add(ident)
-                        except Exception:
-                            pass 
-                    
+                        except Exception as e:
+                            logger.debug(f"Healer skipped {fname}: {e}")
+                                                
                     progress.advance(task)
             
             # Cross-resource audit (outside progress bar)
@@ -625,6 +629,7 @@ class AuditEngineV2:
         
         # Per-file detailed tables
         for fname, file_issues in self._group_by_file(issues).items():
+            full_path = os.path.abspath(os.path.join(self.target, fname))
             console.print(f"\n📂 [bold cyan]{fname}[/]")
             self._render_file_table(file_issues)
         
@@ -918,12 +923,12 @@ def create_parser() -> argparse.ArgumentParser:
     # Standardized help strings with consistent \u00A0 spacing
     # --- SCAN COMMAND ---
     scan_p = subparsers.add_parser("scan", help="🔍 Scan manifests for logic errors")
-    scan_p.add_argument("target", nargs="?", help="Path to scan (default: current dir)")
+    scan_p.add_argument("target", help="Path to scan (file or directory)")
     scan_p.add_argument("--all", action="store_true", help="Show all issues, including baselined")
 
     # --- FIX COMMAND ---
     fix_p = subparsers.add_parser("fix", help="❤️\u00A0 Auto-heal YAML files")
-    fix_p.add_argument("target", nargs="?", help="Path to file or directory")
+    fix_p.add_argument("target", help="Path to file or directory")
     fix_p.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompts")
     fix_p.add_argument("--dry-run", action="store_true", help="Show changes without writing to disk")
     fix_p.add_argument("--apply-defaults", action="store_true", help="Inject missing resource limits/probes")
