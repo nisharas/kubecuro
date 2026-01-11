@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 from contextlib import contextmanager
-
+from argcomplete.completers import FilesCompleter
 
 from rich.console import Console
 from rich.table import Table
@@ -232,10 +232,11 @@ class KubecuroCLI:
         engine.execute(args.command)
     
     def _show_banner(self):
-        """Animated startup banner."""
+        """Clean minimal startup banner."""
+        # Just show the brand name, version is now in the SCAN/FIX panels
         banner = Text("KubeCuro", style="bold magenta", justify="center")
-        banner.append(f" {CONFIG.VERSION}", style="bold cyan")
-        self.console.print(Panel(banner, border_style="bright_magenta", expand=False))
+        self.console.print(Align.center(banner))
+        self.console.print(Rule(style="dim magenta"))
     
     def _smart_resolve_target(self, args: argparse.Namespace) -> Optional[Path]:
         """AI-powered path resolution."""
@@ -476,9 +477,23 @@ class AuditEngineV2:
         cmd_key = command.lower().strip()
         icon = CONFIG.EMOJIS.get(cmd_key, "⚡\u00A0")
         
-        title = f"{icon} KubeCuro {command.upper()}"
-        console.print(Panel(title, style="bold magenta", expand=True))
+        # 1. Construct the integrated Title: 🔍 KubeCuro v1.0.0 SCAN
+        header_text = Text()
+        header_text.append(f"{icon} KubeCuro ", style="bold magenta")
+        header_text.append(f"{CONFIG.VERSION} ", style="italic cyan")
+        header_text.append(command.upper(), style="bold white")
+
+        # 2. Render centered in a single Panel
+        console.print(
+            Panel(
+                Align.center(header_text),
+                box=box.ROUNDED,
+                style="magenta",
+                expand=True
+            )
+        )
         
+        # 3. Execution Logic
         # We always audit first to show the user what's happening
         issues = self.audit()
         reporting_issues = self._filter_baseline(issues)
@@ -491,7 +506,7 @@ class AuditEngineV2:
         elif command == "fix":
             # If no issues were found during audit, don't bother running fixes
             if not issues:
-                console.print("[bold green]✅ Nothing to fix![/]")
+                console.print(Align.center("[bold green]✅ Nothing to fix - Cluster is healthy![/]"))
                 return
             self._execute_zero_downtime_fixes()
       
@@ -525,8 +540,12 @@ class AuditEngineV2:
                     fname = str(abs_fpath)
                     # ✅ Update description dynamically to show progress
                     progress.update(task, description=f"[bold blue]Scanning:[/] [dim]{fpath.name}[/]")
-                    
-                    syn.scan_file(str(fpath))
+
+                    # 1. Capture Synapse (Logic Analysis)
+                    try:
+                        syn.scan_file(str(fpath))
+                    except Exception:
+                        pass # Errors handled via Shield/Healer findings
                     
                     # Shield rules
                     docs = [d for d in syn.all_docs if d.get('_origin_file') == str(fpath)]
@@ -611,7 +630,7 @@ class AuditEngineV2:
     def _render_spectacular_scan(self, issues: List[AuditIssue]):
         """S-Tier animated results."""
         if not issues:
-            console.print(Panel("[bold green]🎉 PERFECT CLUSTER![/]", border_style="green"))
+            console.print(Padding(Align.center(Panel("[bold green]🎉 PERFECT CLUSTER HEALTH[/]", border_style="green", expand=False)), (1, 0)))
             return
         
         # Severity dashboard - FIXED COUNTING LOGIC
@@ -879,6 +898,21 @@ def create_parser() -> argparse.ArgumentParser:
     pos_title = "\033[1;35mPositional Arguments\033[0m"
     opt_title = "\033[1;36mOptions\033[0m"
 
+    # 1. Custom Class to handle Red Error Messages
+    class KubeCuroParser(argparse.ArgumentParser):
+        def error(self, message):
+            # Check if the error is a missing argument
+            if 'the following arguments are required' in message:
+                # Custom clearer message
+                error_msg = "\n\033[1;31m✘ Error: Target path (file or directory) is missing.\033[0m"
+                error_msg += "\n\033[1;33m💡 Hint: Use '.' for current directory or specify a path (e.g., kubecuro scan ./manifests)\033[0m\n"
+            else:
+                error_msg = f"\n\033[1;31m✘ Error: {message}\033[0m\n"
+            
+            self.print_usage(sys.stderr)
+            sys.stderr.write(error_msg)
+            sys.exit(2)
+
     # Using .strip() on the description removes the leading/trailing newlines 
     # that triple quotes (""") naturally introduce.
     description=f"""
@@ -887,7 +921,7 @@ def create_parser() -> argparse.ArgumentParser:
     """.strip()
     
     # Use raw description to preserve our manual formatting in epilog
-    parser = argparse.ArgumentParser(
+    parser = KubeCuroParser(
         prog="kubecuro",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=description,
@@ -923,12 +957,15 @@ def create_parser() -> argparse.ArgumentParser:
     # Standardized help strings with consistent \u00A0 spacing
     # --- SCAN COMMAND ---
     scan_p = subparsers.add_parser("scan", help="🔍 Scan manifests for logic errors")
-    scan_p.add_argument("target", help="Path to scan (file or directory)")
+    target_scan = scan_p.add_argument("target", help="Path to scan (file or directory)")
+    target_scan.completer = FilesCompleter() # ⚡ Enables Tab completion for paths
     scan_p.add_argument("--all", action="store_true", help="Show all issues, including baselined")
+    
 
     # --- FIX COMMAND ---
     fix_p = subparsers.add_parser("fix", help="❤️\u00A0 Auto-heal YAML files")
-    fix_p.add_argument("target", help="Path to file or directory")
+    target_fix = fix_p.add_argument("target", help="Path to file or directory")
+    target_fix.completer = FilesCompleter() # ⚡ Enables Tab completion for paths
     fix_p.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompts")
     fix_p.add_argument("--dry-run", action="store_true", help="Show changes without writing to disk")
     fix_p.add_argument("--apply-defaults", action="store_true", help="Inject missing resource limits/probes")
