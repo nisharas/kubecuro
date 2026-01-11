@@ -185,10 +185,30 @@ class Healer:
                     else:
                         healed_parts.append(doc_str.strip())
                 except Exception as e:
-                    # Get just the first line of the error (usually the most helpful part of a YAML error)
+                    # 1. Extract Line Number from YAML error if possible
+                    error_line = 1
+                    if hasattr(e, 'problem_mark'):
+                        error_line = e.problem_mark.line + 1
+                    
+                    # Calculate the actual line in the full file
+                    global_syntax_line = current_line_offset + (error_line - 1)
+                    
+                    # 2. 🚨 REPORT instead of just skipping
+                    # This ensures 'kubecuro scan' shows the issue in the table
+                    self.detected_codes.add(f"SYNTAX_ERROR:{global_syntax_line}")
+                    
                     err_msg = str(e).split('\n')[0]
-                    logger.warning(f"⏩ Skipping doc in {file_path}: {err_msg}")
-                    healed_parts.append(doc_str.strip())
+                    logger.warning(f"❌ Syntax Error found in {file_path} at line {global_syntax_line}: {err_msg}")
+                    
+                    # 3. Attempt a "Healer" fix if apply_fixes is True
+                    # If this is a missing colon error, we can try to fix it right here
+                    if apply_fixes and "expected ':'" in err_msg.lower():
+                        # Simple regex to fix common "key without colon" errors
+                        fixed_doc = re.sub(r'^(\s*[\w.-]+)(?!\s*[:])(\s*)$', r'\1:\2', doc_str, flags=re.MULTILINE)
+                        healed_parts.append(fixed_doc.strip())
+                    else:
+                        # Keep original so user can see/fix it manually
+                        healed_parts.append(doc_str.strip())
                 
                 actual_lines = len(doc_str.splitlines())
                 current_line_offset += actual_lines + 1
