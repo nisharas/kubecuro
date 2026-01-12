@@ -480,6 +480,29 @@ class KubecuroCLI:
 # ═══════════════════════════════════════════════
 class AuditEngineV2:
     """Production-grade analysis + healing engine."""
+
+    def _silent_healer(self, fpath: str) -> tuple[str|None, list]:
+    """100% silent healer - subprocess isolation."""
+    import subprocess
+    import json
+    
+    cmd = [
+        sys.executable, '-c',
+        f"import sys,logging; logging.disable(logging.CRITICAL+1); "
+        f"sys.stderr=open('/dev/null','w'); "
+        f"from healer import linter_engine; "
+        f"content,codes=linter_engine('{fpath}',dry_run=True,return_content=True,apply_defaults={self.apply_defaults});"
+        f"print(json.dumps({'content':str(content),'codes':[str(c) for c in codes]}))"
+    ]
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            data = json.loads(result.stdout.strip())
+            return data['content'], data['codes']
+    except:
+        pass
+    return None, []
     
     def __init__(self, target: Path, dry_run: bool, yes: bool, show_all: bool, baseline: set, apply_defaults: bool = False):
         self.target = Path(target)
@@ -571,12 +594,9 @@ class AuditEngineV2:
                     shield_issues = sum(1 for doc in docs for _ in shield.scan(doc, syn.all_docs))
                     
                     if not os.getenv('PYTEST_CURRENT_TEST'):
-                        with contextlib.redirect_stderr(devnull):
-                            _, codes = linter_engine(str(abs_fpath), dry_run=True, return_content=True, apply_defaults=self.apply_defaults)
+                        _, codes = self._silent_healer(str(abs_fpath))  # ✅ SILENT
                         healer_issues = len([c for c in codes if not c.startswith('OOM_FIXED')])
                         has_syntax_error = any("SYNTAX_ERROR" in str(c) for c in codes)
-                    else:
-                        healer_issues = has_syntax_error = 0
                     
                     total_issues = shield_issues + healer_issues
                     if has_syntax_error:
@@ -619,8 +639,7 @@ class AuditEngineV2:
                     
                     # Healer codes - CORRECTED PROCESSING
                     if not os.getenv('PYTEST_CURRENT_TEST'):
-                        with contextlib.redirect_stderr(devnull):
-                            _, codes = linter_engine(str(abs_fpath), dry_run=True, return_content=True, apply_defaults=self.apply_defaults)
+                        _, codes = self._silent_healer(str(abs_fpath))
                         
                         for code in codes:
                             parts = str(code).split(":")
@@ -923,7 +942,7 @@ class AuditEngineV2:
         
         for i, fpath in enumerate(files, 1):
             original = self._safe_read(fpath)
-            fixed_content, codes = linter_engine(str(fpath), dry_run=True, return_content=True, apply_defaults=self.apply_defaults)
+            fixed_content, codes = self._silent_healer(str(fpath))
             
             if (isinstance(fixed_content, str) and fixed_content.strip() and 
                 fixed_content.strip() != original.strip()):
