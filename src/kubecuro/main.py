@@ -570,11 +570,10 @@ class AuditEngineV2:
                             line = finding.get('line', 1)
                             ident = f"{fname}:{line}:{code}"
                             # Hide PRO rules from free users
-                            if code in PRO_RULES and not is_pro_user():  # Location 1 & 2
-                            # OR
-                            if issue.code in PRO_RULES and not is_pro_user():  # Location 3
-                                console.print(f"[bold yellow]🔒 PRO RULE: {code or issue.code} (fixmyk8s.com/pro)[/]")
-                                continue  # 👈 CORRECT - skips adding to issues                               
+                            if code in PRO_RULES and not is_pro_user():  
+                                console.print(f"[bold yellow]🔒 PRO RULE: {code} (fixmyk8s.com/pro)[/]")
+                                continue  # 👈 CORRECT - skips adding to issues  
+                            if ident not in seen:
                                 issues.append(AuditIssue(
                                     code=code,
                                     severity=finding.get('severity', '🟡 MEDIUM'),
@@ -593,10 +592,8 @@ class AuditEngineV2:
                                 ccode = parts[0].upper()
                                 line = int(parts[1]) if len(parts) > 1 and parts[1].strip() else 1
                                 # Hide PRO rules from free users
-                                if code in PRO_RULES and not is_pro_user():  # Location 1 & 2
-                                # OR
-                                if issue.code in PRO_RULES and not is_pro_user():  # Location 3
-                                    console.print(f"[bold yellow]🔒 PRO RULE: {code or issue.code} (fixmyk8s.com/pro)[/]")
+                                if ccode in PRO_RULES and not is_pro_user():  
+                                    console.print(f"[bold yellow]🔒 PRO RULE: {ccode} (fixmyk8s.com/pro)[/]")
                                     continue  # 👈 CORRECT - skips adding to issues                                
                                 ident = f"{fname}:{line}:{ccode}"
                                 
@@ -626,16 +623,14 @@ class AuditEngineV2:
             
             # Cross-resource audit (outside progress bar)
             for issue in syn.audit():
-                ident = f"{issue.file}:{issue.line}:{issue.code}"
                 # Hide PRO rules from free users
-                if code in PRO_RULES and not is_pro_user():  # Location 1 & 2
-                # OR
-                if issue.code in PRO_RULES and not is_pro_user():  # Location 3
-                    console.print(f"[bold yellow]🔒 PRO RULE: {code or issue.code} (fixmyk8s.com/pro)[/]")
+                if issue.code in PRO_RULES and not is_pro_user():  
+                    console.print(f"[bold yellow]🔒 PRO RULE: {issue.code} (fixmyk8s.com/pro)[/]")
                     continue  # 👈 CORRECT - skips adding to issues
+                ident = f"{issue.file}:{issue.line}:{issue.code}"
+                if ident not in seen:
                     issues.append(issue)
                     seen.add(ident)
-            
             return issues
     
     def _find_yaml_files(self) -> List[Path]:
