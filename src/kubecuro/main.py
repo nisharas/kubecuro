@@ -839,8 +839,13 @@ class AuditEngineV2:
             tip_color = "spring_green3"
         elif high:
             top_code = high[0].code
+            top_file = Path(high[0].file).name  # Extract filename
             tip_title = "⚠️ CRITICAL ACTION REQUIRED"
-            tip_content = f"High-risk [bold red]{top_code}[/] detected on line {high[0].line}. Run [bold cyan]kubecuro explain {top_code}[/] for remediation logic."
+            # 🆕 Check if rule exists in registry before suggesting explain
+            if top_code in [rid for cat in CONFIG.RULES_REGISTRY.values() for rid in cat.keys()]:
+                tip_content = f"High-risk [bold red]{top_code}[/] in [bold cyan]{top_file}[/] line {high[0].line}. Run [bold cyan]kubecuro explain {top_code}[/] for fix."
+            else:
+                tip_content = f"High-risk [bold red]{top_code}[/] in [bold cyan]{top_file}[/]. Run [bold cyan]kubecuro fix --apply-defaults[/] to auto-fix."
             tip_color = "bright_red"
         elif any(i.code == "OOM_RISK" for i in issues):
             tip_title = "💡 PERFORMANCE ADVISORY"
