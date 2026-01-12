@@ -542,8 +542,9 @@ class AuditEngineV2:
         files = self._find_yaml_files()
         if not files:
             return []
-        
-        console.print("[bold cyan]🔍 Analyzing", len(files), "manifests...[/]\n")
+
+        console.print(f"[bold cyan]🔍 Analyzing {len(files)} manifests...[/]")
+
         
         for i, fpath in enumerate(files, 1):
             fname = fpath.name
