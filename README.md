@@ -1,6 +1,7 @@
-## ❤️ 
-KubeCuro - Kubernetes Surgeon
-**Diagnose. Explain. Auto-Fix. Zero Downtime.**
+### ❤️ KubeCuro - Kubernetes Surgeon 
+***Diagnose. Explain. Auto-Fix. Zero Downtime.***
+
+---
 
 [![Kubernetes](https://img.shields.io/badge/kubernetes-%23326ce5.svg?style=flat&logo=kubernetes&logoColor=white)](https://kubernetes.io)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
