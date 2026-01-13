@@ -944,6 +944,7 @@ class AuditEngineV2:
                     problematic_files.append(fpath.name)
                     
                     # Log improvements based on our new code categories
+                    printed_msgs = set()
                     for code in codes:
                         code_str = str(code).upper()
                         # Map codes to user-friendly messages
@@ -954,11 +955,12 @@ class AuditEngineV2:
                         elif "SVC_SELECTOR_FIXED" in code_str: msg = "Repaired Service selector"
                         elif "API" in code_str or "FIX_SELECTOR" in code_str: msg = "Migrated deprecated API"
 
-                        if msg:
+                        if msg and msg not in printed_msgs:
                             try:
                                 parts = code_str.split(":")
                                 line_info = f"Line {parts[1]}" if (len(parts) > 1 and parts[1].strip()) else "Global"
                                 console.print(f"    [bold blue]💡 {line_info}:[/] [dim]{msg} in {fpath.name}.[/]")
+                                printed_msgs.add(msg)
                             except: pass
 
             if show_progress:
