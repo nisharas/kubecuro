@@ -20,10 +20,10 @@ class Healer:
     def __init__(self):
         # Round-trip loader preserves comments and block styles
         self.yaml = YAML(typ='rt')
-        self.yaml.indent(mapping=2, sequence=2, offset=0)
-        self.yaml.block_seq_indent = 2
-        self.yaml.width = 4096
+        # Kubernetes Standard: 2 space mapping, 2 space sequence, 0 offset
+        self.yaml.indent(mapping=2, sequence=4, offset=2)
         self.yaml.preserve_quotes = True
+        self.yaml.width = 4096
         
         # --- SHIELD INTEGRATION ---
         self.shield = Shield()
@@ -68,7 +68,6 @@ class Healer:
         Lightweight Schema Validation: Checks if the mandatory top-level 
         fields for a given Kind are present.
         """
-        # Define minimum structural requirements for common K8s objects
         schema_requirements = {
             'Pod': ['spec'],
             'Deployment': ['spec'],
@@ -82,7 +81,6 @@ class Healer:
         }
         
         if kind in schema_requirements:
-            # For things like ConfigMaps, we only need one of the data fields
             fields = schema_requirements[kind]
             if not fields: return True
             return any(field in doc for field in fields)
@@ -212,22 +210,34 @@ class Healer:
                 for code in shield_codes:
                     self.detected_codes.add(f"{code}:{current_line_offset}")
 
-                # 2. PRE-PARSER BLUNT FORCE REPAIR (Indentation & Colons)
+                # 2. ENHANCED PRE-PARSER (Indentation, Metadata, Colons)
                 lines = d.splitlines()
                 repaired_lines = []
                 for idx, line in enumerate(lines):
-                    # A. Indentation Snap (Fixes those huge gaps)
-                    if line.startswith(" " * 12) and not line.strip().startswith("#"):
-                        line = "    " + line.lstrip()
-                        self.detected_codes.add(f"FIX_INDENTATION_SNAPPED:{current_line_offset + idx}")
+                    clean_line = line.rstrip()
                     
-                    # B. Smart Colon Injection (Fixes 'image "nginx"')
+                    # A. Indentation Snap (Fixes line 9 command style issues)
+                    if clean_line.startswith(" " * 6) and not clean_line.strip().startswith("-"):
+                        clean_line = "    " + clean_line.lstrip()
+                        self.detected_codes.add(f"FIX_INDENTATION_SNAPPED:{current_line_offset + idx}")
+
+                    # B. Metadata Alignment (Fixes name: healer-test)
+                    if "name:" in clean_line and clean_line.startswith("   "):
+                        clean_line = "  " + clean_line.lstrip()
+                        self.detected_codes.add(f"FIX_METADATA_ALIGNMENT:{current_line_offset + idx}")
+
+                    # C. Smart Colon Injection (Fixes image "nginx" without double-injecting)
                     k8s_keys = r"(image|name|containerPort|hostPort|protocol|imagePullPolicy|kind|apiVersion|labels)"
-                    if re.search(rf'^[ \t]*{k8s_keys}[ \t]+[\'"\[\w]', line):
-                        line = re.sub(rf'^([ \t]*)({k8s_keys})([ \t]+)', r'\1\2: \3', line)
+                    if re.search(rf'^[ \t]*{k8s_keys}[ \t]+[\'"\[\w]', clean_line) and ":" not in clean_line:
+                        clean_line = re.sub(rf'^([ \t]*)({k8s_keys})([ \t]+)', r'\1\2: \3', clean_line)
                         self.detected_codes.add(f"FIX_COLON_INJECTED:{current_line_offset + idx}")
                     
-                    repaired_lines.append(line)
+                    # D. Guard against "image: image" double-up
+                    if "image: image" in clean_line:
+                        clean_line = clean_line.replace("image: image", "image: ")
+
+                    repaired_lines.append(clean_line)
+                
                 d = "\n".join(repaired_lines)
                 
                 # Tab conversion & Key-Value whitespace
@@ -246,7 +256,6 @@ class Healer:
                         api = parsed.get('apiVersion')
                         name = parsed.get('metadata', {}).get('name')
 
-                        # --- NEW: SCHEMA CHECK ---
                         if not self.validate_schema(parsed, kind):
                             self.detected_codes.add(f"SCHEMA_INVALID_STRUCTURE:{current_line_offset}")
 
@@ -295,9 +304,12 @@ class Healer:
 
                 current_line_offset += lines_in_doc + 1
 
-            # --- 4. GHOST DOCUMENT FILTERING ---
+            # --- 4. GHOST DOCUMENT FILTERING & STABILITY ---
             healed_parts = [p for p in healed_parts if p.strip()]
             healed_final = ("---\n" if original_content.startswith("---") else "") + "\n---\n".join(healed_parts) + "\n"
+            
+            # Clean trailing whitespace on every line to ensure stability
+            healed_final = "\n".join([l.rstrip() for l in healed_final.splitlines()]) + "\n"
             
             if return_content: return (healed_final, self.detected_codes)
             
@@ -319,7 +331,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     file_to_scan = sys.argv[1]
-    # We run with dry_run=True to get the findings without modifying the file immediately
     res, codes = linter_engine(file_to_scan, dry_run=True)
 
     print(f"\n{'='*60}")
@@ -329,14 +340,12 @@ if __name__ == "__main__":
     if not codes:
         print("✅ No stability or security issues detected.")
     else:
-        # Sort codes by line number for a clean read
-        sorted_findings = sorted(list(codes), key=lambda x: int(x.split(':')[-1]))
-        
+        sorted_findings = sorted(list(codes), key=lambda x: int(x.split(':')[-1]) if ':' in x else 0)
         for finding in sorted_findings:
+            if ':' not in finding: continue
             code, line = finding.split(':')            
-            # Simple color logic for terminal
             pref = "ℹ️"
-            if any(x in code for x in ["CRITICAL", "OOM", "PRIVILEGED"]): pref = "🔴"
+            if any(x in code for x in ["CRITICAL", "OOM", "PRIVILEGED", "SYNTAX", "ERROR"]): pref = "🔴"
             elif any(x in code for x in ["HIGH", "WILD", "REMOVED"]): pref = "🟠"
             elif "FIX" in code: pref = "🔧"            
             print(f"Line {line.ljust(4)} | {pref} {code}")
@@ -345,6 +354,4 @@ if __name__ == "__main__":
             print(f"💾 STATS: Changes applied to {file_to_scan}")
         else:
             print(f"🔍 STATS: {len(codes)} issues found. No changes saved (Dry Run).")
-
     print(f"{'='*60}\n")
-
