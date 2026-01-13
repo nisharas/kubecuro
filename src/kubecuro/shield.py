@@ -335,6 +335,11 @@ class RegexShield:
     def sanitize(text: str) -> tuple[str, list]:
         fixes = []
         original = text
+
+        # 0. FIX: Detect and "Ghost" empty documents
+        if re.search(r'^---\s*$', text, re.MULTILINE) and not text.strip().replace('---', ''):
+            fixes.append("SYNTAX_EMPTY_DOCUMENT")
+            return "", fixes  # Return empty string to signify this block should be dropped
         
         # 1. FIX: Multi-colon or Trailing colon on image lines
         if re.search(r'(image:\s*)"([^"]+)"\s*:', text):
