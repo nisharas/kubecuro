@@ -10,20 +10,31 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v5 # Updated to v5
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.12' # Matched to your local 3.12.3
+          python-version: '3.12'
 
       - name: Install Project & Testing Tools
         run: |
           python -m pip install --upgrade pip
-          # Install from your local requirements first
           pip install -r requirements.txt
           pip install ruamel.yaml
-          # Force specific rich version if needed, then install package
           pip install --upgrade rich==14.2.0
           pip install -e .
           pip install pytest
+
+      - name: DEBUG - Verify Installation  # ← NEW: See what's WRONG
+        run: |
+          echo "=== PYTHON PATH ==="
+          which python
+          python --version
+          echo "=== INSTALLED PACKAGES ==="
+          pip list | grep -E "(yaml|rich|kubecuro)"
+          echo "=== TEST IMPORTS ==="
+          python -c "import yaml; print('✅ YAML OK:', yaml.__version__)" || echo "❌ YAML FAILED"
+          python -c "import kubecuro; print('✅ KUBECURO OK')" || echo "❌ KUBECURO FAILED"
+          echo "=== TEST KUBECURO MAIN ==="
+          python -m kubecuro.main --help || echo "❌ KUBECURO.MAIN FAILED"
 
       - name: Environment Truth-Check
         run: |
@@ -34,6 +45,4 @@ jobs:
         run: |
           find . -name "*.pyc" -delete
           find . -name "__pycache__" -delete
-          
-          # We use python -m pytest to ensure the installed 'src' is picked up
-          python -m pytest tests/
+          python -m pytest tests/ -v --tb=short
