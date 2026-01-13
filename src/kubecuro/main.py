@@ -477,7 +477,7 @@ class AuditEngineV2:
         healed = re.sub(r'(^[ \t]*[\w.-]+)(?=[ \t]*$)', r'\1:', original_content, flags=re.MULTILINE)
         
         # 2. Fix image: nginx → image: "nginx" (YOUR EXACT ERROR!)
-        healed = re.sub(r'(image[ \t]*)(.*?:?)', r'    image: \2', healed, flags=re.MULTILINE)
+        healed = re.sub(r'^([ \t]*image[ \t]*:?)(.*)', r'\1: "\2"', healed, flags=re.MULTILINE)
         
         # 3. Fix colon without space: key:val → key: val
         healed = re.sub(r'([a-zA-Z0-9_-]+)(:)([a-zA-Z0-9_-][^"\s\n]*)', r'\1\2 \3', healed, flags=re.MULTILINE)
