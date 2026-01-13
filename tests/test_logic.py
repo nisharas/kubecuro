@@ -7,21 +7,21 @@ import pytest
 # Helper to run KubeCuro commands
 def run_kubecuro(*args):
     env = os.environ.copy()
-    # Point to project ROOT (where src/ lives)
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    env["PYTHONPATH"] = project_root
+    
+    # CRITICAL: Point to src/ directory where kubecuro package lives
+    src_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+    env["PYTHONPATH"] = src_dir  # ← /kubecuro/src/ NOT /kubecuro/
+    
     env["FORCE_COLOR"] = "1" 
     env["PYTEST_CURRENT_TEST"] = "true" 
     
-    # ✅ CRITICAL FIXES:
-    # 1. Pass the env dict to subprocess
-    # 2. Use current Python (pytest's Python) explicitly
     return subprocess.run(
         [sys.executable, "-m", "kubecuro.main", *args],
         capture_output=True,
         text=True,
-        env=env  # ← ADD THIS LINE (WAS MISSING!)
+        env=env
     )
+
 
 
 def test_ghost_service_logic():
