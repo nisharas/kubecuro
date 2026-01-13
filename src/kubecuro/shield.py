@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import logging
+import re
 """
 --------------------------------------------------------------------------------
 AUTHOR:         Nishar A Sunkesala / FixMyK8s
@@ -326,3 +327,55 @@ class Shield:
                         self.get_line(c)
                     ))
         return findings
+      
+class RegexShield:
+    """Sanitizes raw text to prevent YAML Parser crashes from human 'dirty' typing."""
+    
+    @staticmethod
+    def sanitize(text: str) -> tuple[str, list]:
+        fixes = []
+        original = text
+        
+        # 1. FIX: Multi-colon or Trailing colon on image lines
+        if re.search(r'(image:\s*)"([^"]+)"\s*:', text):
+            text = re.sub(r'(image:\s*)"([^"]+)"\s*:', r'\1"\2"', text)
+            fixes.append("SYNTAX_REPAIRED")
+        
+        if re.search(r'image:\s*[:\s]{2,}', text):
+            text = re.sub(r'(image:\s*)[:\s]+', r'\1', text)
+            fixes.append("SYNTAX_REPAIRED")
+
+        # 2. Fixing 'tag: latest' spaces inside quotes
+        if ": latest" in text:
+            text = text.replace(": latest", ":latest")
+            fixes.append("SYNTAX_REPAIRED")
+
+        # 3. ELASTIC Indentation Fixer:
+        # Matches the indentation of the PREVIOUS line to maintain block integrity.
+        lines = text.splitlines()
+        fixed_lines = []
+        
+        for i in range(len(lines)):
+            current_line = lines[i]
+            
+            # Check if this line is a drifted 'command' or 'args'
+            if i > 0 and re.search(r'^\s+(command|args):', current_line):
+                # Get the indentation of the previous line (e.g., 'image:' or 'name:')
+                prev_line = lines[i-1]
+                prev_indent_match = re.match(r'^(\s*)', prev_line)
+                
+                if prev_indent_match:
+                    target_indent = prev_indent_match.group(1)
+                    # If current line starts with a list marker '-' handle that, 
+                    # otherwise just align the keys vertically.
+                    content = current_line.lstrip()
+                    fixed_lines.append(f"{target_indent}{content}")
+                    continue
+            
+            fixed_lines.append(current_line)
+        
+        text = "\n".join(fixed_lines)
+        if text.strip() != original.strip() and "SYNTAX_REPAIRED" not in fixes:
+            fixes.append("SYNTAX_REPAIRED")
+            
+        return text, fixes
