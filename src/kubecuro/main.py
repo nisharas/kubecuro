@@ -462,60 +462,18 @@ class KubecuroCLI:
 # ═══════════════════════════════════════════════
 class AuditEngineV2:
     """Production-grade analysis + healing engine."""
-
-    def _syntax_healer(self, file_path: str) -> tuple[str, List[str]]:
-        """YOUR PERFECT kubectl-lint logic integrated."""
-        from ruamel.yaml import YAML  # Already in requirements!
-        
-        yaml_parser = YAML()
-        yaml_parser.indent(mapping=2, sequence=4, offset=2)
-        yaml_parser.preserve_quotes = True
-        
-        original_content = Path(file_path).read_text()
-        
-        # 1. Fix missing colons at end of lines
-        healed = re.sub(r'(^[ \t]*[\w.-]+)(?=[ \t]*$)', r'\1:', original_content, flags=re.MULTILINE)
-        
-        # 2. Fix image: nginx → image: "nginx" (YOUR EXACT ERROR!)
-        healed = re.sub(r'^([ \t]*image[ \t]*:?)(.*)', r'\1: "\2"', healed, flags=re.MULTILINE)
-        
-        # 3. Fix colon without space: key:val → key: val
-        healed = re.sub(r'([a-zA-Z0-9_-]+)(:)([a-zA-Z0-9_-][^"\s\n]*)', r'\1\2 \3', healed, flags=re.MULTILINE)
-        
-        # 4. Fix container indent (6 spaces → 4 spaces)
-        healed = re.sub(r'^([ \t]*containers:.*?)\n([ \t]{6,})([^\n]*)', r'\1\n\2  \3', healed, flags=re.MULTILINE)
-        
-        # 5. Tabs → 2 spaces
-        healed = healed.replace('\t', '  ')
-        
-        # 6. Fix double newlines
-        healed = re.sub(r'\n([ \t]*)\n+', r'\n\1\n', healed)
-        
-        # ruamel.yaml normalization (preserves comments!)
-        try:
-            docs = list(yaml_parser.load_all(healed))
-            output_buffer = StringIO()
-            yaml_parser.dump_all(docs, output_buffer)
-            healed_final = output_buffer.getvalue()
-        except Exception:
-            healed_final = healed  # Use regex-fixed version (ALWAYS safe)
-        
-        # SMART FIX COUNTING (AFTER healing)
-        diff = list(difflib.unified_diff(original_content.splitlines(), healed_final.splitlines(), lineterm=''))
-        fix_count = len([line for line in diff if line.startswith('+') and not line.startswith('+++')])
-
-        # HONEST RESULTS
-        if fix_count > 0:
-            codes = [f"SYNTAX_FIXED:{fix_count}"]
-        else:
-            codes = ["SYNTAX_CLEAN"]  # Perfect file!
-        return healed_final, codes
-
     def _silent_healer(self, fpath: str) -> tuple[str|None, list]:
-        """Directly call YOUR syntax_healer - 100% working"""
+        """✅ USE YOUR EXISTING healer.py - Perfect architecture!"""
         try:
-            # Call YOUR EXISTING _syntax_healer directly
-            content, codes = self._syntax_healer(fpath)
+            from src.kubecuro.healer import linter_engine
+            # YOUR healer.py signature EXACTLY:
+            content, codes = linter_engine(
+                file_path=fpath, 
+                apply_api_fixes=True,
+                apply_defaults=self.apply_defaults,
+                dry_run=self.dry_run,
+                return_content=True  # ✅ Returns (content, codes)
+            )
             return content, codes
         except Exception:
             return None, []
