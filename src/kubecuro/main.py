@@ -466,7 +466,7 @@ class AuditEngineV2:
     def _silent_healer(self, fpath: str) -> tuple[str|None, list]:
         """FIX: Route to production healer.py"""
         try:
-            from src.kubecuro.healer import linter_engine
+            from kubecuro.healer import linter_engine
             # EXACT healer.py signature:
             content, codes = linter_engine(
                 file_path=fpath,
