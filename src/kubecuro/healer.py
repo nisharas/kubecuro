@@ -20,7 +20,7 @@ class Healer:
     def __init__(self):
         # Round-trip loader preserves comments and block styles
         self.yaml = YAML(typ='rt')
-        self.yaml.indent(mapping=2, sequence=4, offset=2)
+        self.yaml.indent(mapping=2, sequence=2, offset=0)
         self.yaml.block_seq_indent = 2
         self.yaml.width = 4096
         self.yaml.preserve_quotes = True
