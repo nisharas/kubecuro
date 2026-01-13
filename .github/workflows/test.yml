@@ -17,19 +17,18 @@ jobs:
       - name: Install Project & Testing Tools
         run: |
           python -m pip install --upgrade pip
-          # 1. Clear out any old metadata and cache that might be "poisoning" the imports
+          # 1. Purge metadata to keep the path clean
           rm -rf build/ dist/ *.egg-info src/*.egg-info .pytest_cache
           
-          # 2. Install core testing tools and YAML first
-          pip install --no-cache-dir PyYAML pytest ruamel.yaml
+          # 2. Install EVERYTHING from your requirements file
+          # This will get argcomplete, ruamel.yaml, PyYAML, and rich
+          pip install --no-cache-dir -r requirements.txt
           
-          # 3. Install the project in editable mode WITHOUT dependencies
-          # This prevents the 'pip install -e .' from trying to "fix" our rich version
+          # 3. Double-check Rich and Pytest are exactly what we want
+          pip install --no-cache-dir --force-reinstall rich==14.2.0 pytest
+          
+          # 4. Link the project source without messing with dependencies
           pip install --no-cache-dir --no-deps -e .
-          
-          # 4. Force a clean, isolated install of Rich at the very end
-          # This ensures it is the "top layer" in site-packages
-          pip install --no-cache-dir --force-reinstall rich==14.2.0
 
       - name: DEBUG - Verify Installation  # ← NEW: See what's WRONG
         run: |
