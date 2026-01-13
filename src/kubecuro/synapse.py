@@ -74,18 +74,30 @@ class Synapse:
                 name = metadata.get('name', 'unknown')
                 ns = metadata.get('namespace', 'default')
                 spec = doc.get('spec', {}) or {}
-
-                # --- 1. Workload Processing (Deployments, Pods, etc.) ---
-                if kind in ['Deployment', 'Pod', 'StatefulSet', 'DaemonSet']:
+ 
+                # --- 1. Workload Processing (Deployments, Pods, CronJobs, etc.) ---
+                workloads = ['Deployment', 'Pod', 'StatefulSet', 'DaemonSet', 'CronJob', 'Job']
+                if kind in workloads:
                     self.workload_docs.append(doc)
-                    is_pod = kind == 'Pod'
-                    template = spec.get('template', {}) if not is_pod else doc
-                    t_metadata = template.get('metadata', {})
-                    labels = t_metadata.get('labels') or {}
                     
-                    p_spec = template.get('spec', {}) if not is_pod else spec
+                    # 1a. Extract Pod Spec and Metadata based on Kind
+                    if kind == 'Pod':
+                        t_metadata = metadata
+                        p_spec = spec
+                    elif kind == 'CronJob':
+                        job_spec = spec.get('jobTemplate', {}).get('spec', {})
+                        template = job_spec.get('template', {})
+                        t_metadata = template.get('metadata', {})
+                        p_spec = template.get('spec', {})
+                    else:
+                        template = spec.get('template', {})
+                        t_metadata = template.get('metadata', {})
+                        p_spec = template.get('spec', {})
+
+                    labels = t_metadata.get('labels') or {}
                     containers = p_spec.get('containers') or []
                     
+                    # 1b. Map Ports and Probes
                     c_ports = []
                     probes = []
                     for c in containers:
@@ -104,10 +116,17 @@ class Synapse:
                                     'path': p_data['httpGet'].get('path')
                                 })
 
+                    # 1c. Register as Producer
                     self.producers.append({
-                        'name': name, 'kind': kind, 'labels': labels, 'namespace': ns,
-                        'ports': c_ports, 'probes': probes, 'file': fname,
-                        'volumes': p_spec.get('volumes') or [], 'raw_doc': doc
+                        'name': name, 
+                        'kind': kind, 
+                        'labels': labels, 
+                        'namespace': ns,
+                        'ports': c_ports, 
+                        'probes': probes, 
+                        'file': fname,
+                        'volumes': p_spec.get('volumes') or [], 
+                        'raw_doc': doc
                     })
 
                 # --- 2. Service Processing ---
