@@ -33,12 +33,22 @@ from rich.text import Text
 from rich.align import Align
 from rich.columns import Columns
 from rich.console import Group
+from rich.theme import Theme
 from rich.traceback import install
 from rich.progress import (Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn, 
                           TaskProgressColumn, ProgressBar, TimeElapsedColumn)
 
 from rich.padding import Padding
 from argcomplete.completers import FilesCompleter
+
+custom_theme = Theme({
+    "info": "dim cyan",
+    "warning": "magenta",
+    "danger": "bold red",
+    "success": "bold green",
+    "fix": "bold blue"
+})
+console = Console(theme=custom_theme)
 
 # ========== KUBECURO FREEMIUM GATE ==========
 PRO_RULES = {
@@ -926,12 +936,13 @@ class AuditEngineV2:
 
         fixed_count = 0
         problematic_files = []
+        global_codes = set()  # <--- TRACK ALL CODES FOR SUMMARY
         
         for i, fpath in enumerate(files, 1):
             original = self._safe_read(fpath)
+            # Ensure the healer returns the codes set
             fixed_content, codes = self._silent_healer(str(fpath))
 
-            # Check if we actually improved the file
             has_changed = (
                 isinstance(fixed_content, str) and 
                 fixed_content.strip() and 
@@ -942,15 +953,16 @@ class AuditEngineV2:
                 if self._atomic_fix(fpath, original, fixed_content):
                     fixed_count += 1
                     problematic_files.append(fpath.name)
+                    global_codes.update(codes) # <--- ADD TO ACCUMULATOR
                     
-                    # Log improvements based on our new code categories
+                    # Real-time per-file logging
                     printed_msgs = set()
                     for code in codes:
                         code_str = str(code).upper()
-                        # Map codes to user-friendly messages
                         msg = None
                         if "OOM_FIXED" in code_str: msg = "Applied resource limits"
                         elif "SYNTAX" in code_str: msg = "Fixed indentation/tabs"
+                        elif "COLON" in code_str: msg = "Injected missing colons" # Added for your new logic
                         elif "SEC_PRIVILEGED" in code_str: msg = "Hardened security context"
                         elif "SVC_SELECTOR_FIXED" in code_str: msg = "Repaired Service selector"
                         elif "API" in code_str or "FIX_SELECTOR" in code_str: msg = "Migrated deprecated API"
@@ -965,42 +977,56 @@ class AuditEngineV2:
 
             if show_progress:
                 file_status = "yellow" if has_changed else "green"
-                console.print(f"  [{i:2d}/{len(files)}] [dim]{fpath.name:<35}[/] [bold {file_status}]✓[/]")
+                status_icon = "✓" if has_changed else "ok"
+                console.print(f"  [{i:2d}/{len(files)}] [dim]{fpath.name:<35}[/] [bold {file_status}]{status_icon}[/]")
         
-        self._render_fix_summary(fixed_count, len(files), problematic_files)
+        # PASS GLOBAL CODES TO SUMMARY
+        self._render_fix_summary(fixed_count, len(files), problematic_files, global_codes)
 
-    def _render_fix_summary(self, fixed, total, names):
+    def _render_fix_summary(self, fixed, total, names, all_detected_codes=None):
         """Final summary for the KubeCuro CLI."""
         from rich.panel import Panel
-        from rich.text import Text
 
         if fixed == 0:
-            console.print(f"\n[bold green]✅ KubeCuro Audit:[/] All {total} files are currently healthy. No treatment required.")
+            console.print(f"\n[success]✅ KubeCuro Audit:[/] All {total} files are currently healthy. No treatment required.")
             return
 
-        # Build the treatment report
-        summary_text = Text()
-        summary_text.append("\n⚕️  KubeCuro Treatment Complete\n", style="bold green")
-        summary_text.append(f"Healed {fixed} of {total} manifests with zero downtime.\n", style="white")
+        # Building content as a list of markup strings
+        content = [
+            f"\n[success]⚕️  KubeCuro Treatment Complete[/success]",
+            f"Healed [bold]{fixed}[/bold] of {total} manifests with zero downtime.\n"
+        ]
         
         if names:
             subset = names[:5]
             name_str = ", ".join(subset)
             if len(names) > 5:
                 name_str += f" (+{len(names)-5} others)"
-            summary_text.append(f"\n[bold blue]Patched manifests:[/]\n[dim]{name_str}[/]\n", style="dim")
+            content.append("[fix]Patched manifests:[/fix]")
+            content.append(f"[dim]{name_str}[/dim]\n")
 
-        # KubeCuro-specific next step
-        summary_text.append("\n[bold yellow]👉 Recommendation:[/] Review the changes and run ", style="white")
-        summary_text.append("`kubecuro scan` ", style="bold cyan")
-        summary_text.append("to verify the new security posture.", style="white")
+        # Code visibility logic
+        if all_detected_codes:
+            content.append("[warning]Repairs Performed:[/warning]")
+            # Get clean, unique codes (no line numbers)
+            unique_codes = sorted(list(set(c.split(':')[0] for c in all_detected_codes if c)))
+            for code in unique_codes:
+                # Map technical codes to friendly names if desired, or just print code
+                content.append(f" [success]✓[/success] {code.replace('_', ' ').title()}")
+            content.append("") 
+
+        content.append(
+            "[white]👉 [bold yellow]Recommendation:[/] Review changes and run "
+            "[bold cyan]`kubecuro scan`[/] to verify security posture.[/]"
+        )
 
         console.print(
             Panel(
-                summary_text,
+                "\n".join(content),
                 title="[bold white] TREATMENT SUMMARY [/]",
                 border_style="green",
-                expand=False
+                expand=False,
+                padding=(1, 2)
             )
         )
   
