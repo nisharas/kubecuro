@@ -17,16 +17,15 @@ jobs:
       - name: Install Project & Testing Tools
         run: |
           python -m pip install --upgrade pip
-          # Remove any stale metadata that causes Namespace collisions
-          rm -rf src/*.egg-info build/ .pytest_cache
-          # 1. Install core dependencies first
-          pip install --no-cache-dir PyYAML pytest          
-          # 2. Install your project in editable mode
-          # Install the project WITHOUT dependencies to avoid clobbering
-          # This prevents the requirements.txt/pyproject.toml from messing with Rich
+          # 1. Clean up metadata
+          rm -rf build/ dist/ *.egg-info src/*.egg-info .pytest_cache
+          
+          # 2. Install EVERYTHING from requirements.txt (including ruamel and rich)
+          # This ensures 'ruamel.yaml' and 'rich==14.2.0' are both present
+          pip install --no-cache-dir -r requirements.txt
+          
+          # 3. Link the project (no-deps is safe now because Step 2 did the work)
           pip install --no-cache-dir --no-deps -e .
-          # 3. Force REINSTALL rich LAST to ensure the correct version wins
-          pip install --no-cache-dir --force-reinstall rich==14.2.0
 
       - name: DEBUG - Verify Installation  # ← NEW: See what's WRONG
         run: |
