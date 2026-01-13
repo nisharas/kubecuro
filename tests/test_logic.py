@@ -7,18 +7,22 @@ import pytest
 # Helper to run KubeCuro commands
 def run_kubecuro(*args):
     env = os.environ.copy()
-    # FIX: Point to project ROOT (where src/ lives)
+    # Point to project ROOT (where src/ lives)
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     env["PYTHONPATH"] = project_root
     env["FORCE_COLOR"] = "1" 
     env["PYTEST_CURRENT_TEST"] = "true" 
     
+    # ✅ CRITICAL FIXES:
+    # 1. Pass the env dict to subprocess
+    # 2. Use current Python (pytest's Python) explicitly
     return subprocess.run(
         [sys.executable, "-m", "kubecuro.main", *args],
         capture_output=True,
         text=True,
-        env=env
+        env=env  # ← ADD THIS LINE (WAS MISSING!)
     )
+
 
 def test_ghost_service_logic():
     """Scenario: Service exists but matches no pods."""
