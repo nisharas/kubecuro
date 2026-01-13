@@ -490,6 +490,7 @@ class AuditEngineV2:
     def __init__(self, target: Path, dry_run: bool, yes: bool, show_all: bool, baseline: set, apply_defaults: bool = False):
         self.target = Path(target)
         self.dry_run = dry_run
+        self.console = Console()
         self.yes = yes
         self.show_all = show_all
         self.baseline = baseline
@@ -1021,16 +1022,16 @@ class AuditEngineV2:
                 # RECOMMENDATION: Ensure data is physically on the disk
                 f.flush()            # Clear Python internal buffers
                 os.fsync(f.fileno()) # Force the OS to write to physical storage
-                
-            self.console.print(f"[bold green]✅ FIXED: {fpath.name}[/]")
+
+            print(f"✅ FIXED: {fpath.name}")
             return True
             
         except Exception as e:
             # 3. Fail-safe: If anything went wrong during the write, restore backup
             if backup.exists() and not fpath.exists():
                 backup.rename(fpath)
-                
-            self.console.print(f"[bold red]⚠️  Failed to fix {fpath.name}: {e}[/]")
+
+            print(f"⚠️ Failed to fix {fpath.name}: {e}")
             return False
 
 # ═══════════════════════════════════════════════════════════════
