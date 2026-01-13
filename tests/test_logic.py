@@ -6,22 +6,24 @@ import pytest
 
 # Helper to run KubeCuro commands
 def run_kubecuro(*args):
+    # Get ABSOLUTE path to pytest's Python (with site-packages)
+    pytest_python = shutil.which("python3") or sys.executable
+    
     env = os.environ.copy()
-    src_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
-    env["PYTHONPATH"] = src_dir
+    # Project root where pyproject.toml lives
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env["PYTHONPATH"] = project_root  # /kubecuro/ (pyproject.toml installs here)
     env["FORCE_COLOR"] = "1" 
     env["PYTEST_CURRENT_TEST"] = "true" 
     
-    # 🔥 NUCLEAR OPTION: Install deps IN the subprocess itself
-    cmd = [sys.executable, "-m", "pip", "install", "ruamel.yaml", "rich", "argcomplete"]
-    subprocess.run(cmd, env=env, check=True)
-    
     return subprocess.run(
-        [sys.executable, "-m", "kubecuro.main", *args],
+        [pytest_python, "-m", "kubecuro.main", *args],
         capture_output=True,
         text=True,
-        env=env
+        env=env,
+        cwd=project_root  # Run from project root!
     )
+
 
 def test_ghost_service_logic():
     """Scenario: Service exists but matches no pods."""
