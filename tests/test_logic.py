@@ -5,15 +5,19 @@ import pytest
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr # Added redirect_stderr
 
-# FIX: Ensure 'src' is in the path so we can find 'kubecuro'
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(project_root, "src"))
+# TRIPLE-CHECK: Inject src at the absolute highest priority
+abs_src = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+if abs_src not in sys.path:
+    sys.path.insert(0, abs_src)
 
-# Get absolute path to /src
-abs_src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
-if abs_src_path not in sys.path:
-    sys.path.insert(0, abs_src_path)
+# DEBUG: Print exactly where 'rich' is coming from before we try to use it
+try:
+    import rich
+    print(f"DEBUG: Rich loaded from {rich.__file__}")
+except Exception as e:
+    print(f"DEBUG: Rich failed to load: {e}")
 
+# Now do your imports
 from kubecuro.main import main 
 
 def run_kubecuro(*args):
