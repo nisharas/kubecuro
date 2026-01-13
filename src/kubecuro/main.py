@@ -595,12 +595,16 @@ class AuditEngineV2:
             
             # 🔥 1️⃣ YAML SYNTAX CHECK (NEW - CRITICAL!)
             content = fpath.read_text()
+            yaml_parser = ruamel.yaml.YAML(typ='safe')
+            yaml_parser.allow_duplicate_keys = True  # K8s standard
             try:
-                yaml.safe_load(content)
+                docs = list(yaml_parser.load_all(content))
+                if not docs:
+                    raise yaml.YAMLError("Empty YAML")
             except yaml.YAMLError as yaml_err:
                 # 🎉 SYNTAX ERROR DETECTED!
                 line_num = getattr(yaml_err.problem_mark, 'line', 1) + 1
-                status_color = "yellow"  # Will be fixed!
+                status_color = "yellow"  
                 
                 # 🔥 Fix Syntax
                 healed_content, fix_codes = self._syntax_healer(str(fpath))
