@@ -462,11 +462,14 @@ class KubecuroCLI:
 # ═══════════════════════════════════════════════
 class AuditEngineV2:
     """Production-grade analysis + healing engine."""
+
     def _silent_healer(self, fpath: str) -> tuple[Optional[str], list]:
         """Unified Healer Route: Handles logic fixes and Regex recovery."""
+        from kubecuro.healer import linter_engine
+        from kubecuro.shield import RegexShield # Import your new elastic shield
+        
         try:
-            # Fixed: Ensure linter_engine is available
-            from kubecuro.healer import linter_engine
+            # Attempt standard YAML-based healing
             content, codes = linter_engine(
                 file_path=fpath,
                 apply_api_fixes=True,
@@ -476,13 +479,14 @@ class AuditEngineV2:
             )
             return content, list(codes)
         except Exception:
-            # Fallback to Regex repair if YAML is unparseable
+            # FALLBACK: YAML is unparseable. Use the Elastic RegexShield.
             try:
                 raw_text = Path(fpath).read_text()
-                repaired = re.sub(r'(image:\s*)[:\s]+', r'\1', raw_text)
-                repaired = re.sub(r'^\s+command:', '    command:', repaired, flags=re.MULTILINE)
+                # Use the robust elastic logic we just wrote!
+                repaired, codes = RegexShield.sanitize(raw_text)
+                
                 if repaired != raw_text:
-                    return repaired, ["SYNTAX_REPAIRED:1"]
+                    return repaired, codes # Returns ["SYNTAX_REPAIRED"]
             except Exception:
                 pass
             return None, []
@@ -936,28 +940,17 @@ class AuditEngineV2:
         
         for i, fpath in enumerate(files, 1):
             original = self._safe_read(fpath)
-            # Try standard healing
-            fixed_content, codes = self._silent_healer(str(fpath))
             
-            # --- ENHANCEMENT: RAW RECOVERY ---
-            # If healer returned None (likely a syntax crash), it means 
-            # we need to pass the raw string directly to a recovery function
-            if fixed_content is None:
-                # Assuming linter_engine can be imported directly for emergency string repair
-                try:
-                    fixed_content, codes = linter_engine(
-                        file_path=str(fpath),
-                        apply_api_fixes=True,
-                        return_content=True,
-                        # We don't pass yaml_docs here, forcing healer to use regex/string logic
-                    )
-                except:
-                    fixed_content = None
+            # Unified Healer handles both standard logic and regex emergency repair
+            fixed_content, codes = self._silent_healer(str(fpath))
 
             # Check if we actually changed anything
-            has_changed = (isinstance(fixed_content, str) and 
-                          fixed_content.strip() and 
-                          fixed_content.strip() != original.strip())
+            # We ensure fixed_content is a valid string and different from original
+            has_changed = (
+                isinstance(fixed_content, str) and 
+                fixed_content.strip() and 
+                fixed_content.strip() != original.strip()
+            )
 
             if has_changed:
                 if self._atomic_fix(fpath, original, fixed_content):
@@ -966,23 +959,24 @@ class AuditEngineV2:
                     
                     # Log specific improvements (OOM, Syntax, etc.)
                     for code in codes:
-                        if "OOM_FIXED" in code or "SYNTAX_REPAIRED" in code:
+                        code_str = str(code).upper()
+                        if "OOM_FIXED" in code_str or "SYNTAX_REPAIRED" in code_str:
                             try:
-                                parts = code.split(":")
+                                parts = code_str.split(":")
                                 line_info = f"Line {parts[1]}" if len(parts) > 1 else "Global"
-                                msg = "Applied resource limits" if "OOM" in code else "Repaired YAML structure"
-                                console.print(f"   [bold blue]💡 {line_info}:[/] [dim]{msg} in {fpath.name}.[/]")
-                            except Exception: pass
+                                msg = "Applied resource limits" if "OOM" in code_str else "Repaired YAML structure"
+                                console.print(f"    [bold blue]💡 {line_info}:[/] [dim]{msg} in {fpath.name}.[/]")
+                            except Exception: 
+                                pass
 
             if show_progress:
-                # If the file was problematic but we fixed it, show yellow check
-                # If it was clean from the start, show green check
+                # yellow check = modified/fixed, green check = already healthy
                 file_status = "yellow" if has_changed else "green"
                 console.print(f"  [{i:2d}/{len(files)}] [dim]{fpath.name:<35}[/] [bold {file_status}]✓[/]")
         
         # Final Summary Panel
         self._render_fix_summary(fixed_count, len(files), problematic_files)
-
+      
     def _render_fix_summary(self, fixed, total, names):
         """Clean summary output for the fix command."""
         if fixed == 0:
