@@ -596,38 +596,32 @@ class AuditEngineV2:
             
             # 🔥 1️⃣ YAML SYNTAX CHECK (NEW - CRITICAL!)
             content = fpath.read_text()
-            yaml_parser = ruamel.yaml.YAML(typ='safe')
-            yaml_parser.allow_duplicate_keys = True  # K8s standard
             try:
+                yaml_parser = ruamel.yaml.YAML(typ='safe')
+                yaml_parser.allow_duplicate_keys = True
                 docs = list(yaml_parser.load_all(content))
                 if not docs:
-                    raise yaml.YAMLError("Empty YAML")
-            except (yaml.YAMLError, ruamel.yaml.scanner.ScannerError, ruamel.yaml.parser.ParserError) as yaml_err:
-                # 🎉 SYNTAX ERROR DETECTED!
-                line_num = getattr(yaml_err.problem_mark, 'line', 1) + 1
-                status_color = "yellow"  
+                    raise Exception("Empty YAML")
+            except Exception as yaml_err:  # 🔥 CATCH EVERYTHING
+                # 🎉 ANY YAML ISSUE → AUTO-HEAL
+                line_num = getattr(getattr(yaml_err, 'problem_mark', None), 'line', 1) + 1
+                status_color = "yellow"
                 
-                # 🔥 Fix Syntax
                 healed_content, fix_codes = self._syntax_healer(str(fpath))
-                fpath.write_text(healed_content)  # Auto-save!
+                fpath.write_text(healed_content)
                 
-                # Report fixes
                 for code in fix_codes:
                     parts = code.split(":")
-                    ident = f"{fname_full}:{parts[1]}:SYNTAX_FIXED" # Use line_num
+                    ident = f"{fname_full}:{parts[1]}:SYNTAX_FIXED"
                     if ident not in seen:
                         issues.append(AuditIssue(
-                            code="SYNTAX_FIXED",
-                            severity="MEDIUM",
-                            file=fname_full,
-                            message=f"Syntax healed: {code}",
-                            line=line_num
+                            code="SYNTAX_FIXED", severity="MEDIUM",
+                            file=fname_full, message=f"Syntax healed: {code}", line=line_num
                         ))
                         seen.add(ident)
                 
-                if show_progress:
-                    console.print(f"  [{i:2d}/{len(files)}] [dim]{fname:<35}[/] [bold yellow]✓[/]")
-                continue
+                console.print(f"  [{i:2d}/{len(files)}] [dim]{fname:<35}[/] [bold yellow]✓[/]")
+                continue  # ✅ CRITICAL: Skip to next file
             
             # 2️⃣ STATUS CHECK (only valid YAML files)
             try:
