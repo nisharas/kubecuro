@@ -24,8 +24,12 @@ class RegexShield:
         fixes = []
         original = text
         
-        # 1. Multi-colon image definitions (e.g., image: : : : "nginx")
-        if re.search(r'image:\s*[:\s]+', text):
+        # 1. FIX: Multi-colon or Trailing colon on image lines
+        if re.search(r'(image:\s*)"([^"]+)"\s*:', text):
+            text = re.sub(r'(image:\s*)"([^"]+)"\s*:', r'\1"\2"', text)
+            fixes.append("SYNTAX_REPAIRED")
+        
+        if re.search(r'image:\s*[:\s]{2,}', text):
             text = re.sub(r'(image:\s*)[:\s]+', r'\1', text)
             fixes.append("SYNTAX_REPAIRED")
 
@@ -34,22 +38,33 @@ class RegexShield:
             text = text.replace(": latest", ":latest")
             fixes.append("SYNTAX_REPAIRED")
 
-        # 3. Indentation Fixer: Catching 'command' or 'args' that drifted too far right
-        # Specifically targets the pattern where these are siblings to 'image'
-        if "command:" in text or "args:" in text:
-            # Re-align command/args if they are indented deeper than the 'name' or 'image' keys
-            lines = text.splitlines()
-            fixed_lines = []
-            for line in lines:
-                if re.search(r'^\s+(command|args):', line):
-                    # Force a standard 6-space or 8-space indentation for container properties
-                    # depending on your project's YAML style
-                    fixed_lines.append(re.sub(r'^\s+', '    ', line))
-                else:
-                    fixed_lines.append(line)
-            text = "\n".join(fixed_lines)
-            if text != original and "SYNTAX_REPAIRED" not in fixes:
-                fixes.append("SYNTAX_REPAIRED")
+        # 3. ELASTIC Indentation Fixer:
+        # Matches the indentation of the PREVIOUS line to maintain block integrity.
+        lines = text.splitlines()
+        fixed_lines = []
+        
+        for i in range(len(lines)):
+            current_line = lines[i]
+            
+            # Check if this line is a drifted 'command' or 'args'
+            if i > 0 and re.search(r'^\s+(command|args):', current_line):
+                # Get the indentation of the previous line (e.g., 'image:' or 'name:')
+                prev_line = lines[i-1]
+                prev_indent_match = re.match(r'^(\s*)', prev_line)
+                
+                if prev_indent_match:
+                    target_indent = prev_indent_match.group(1)
+                    # If current line starts with a list marker '-' handle that, 
+                    # otherwise just align the keys vertically.
+                    content = current_line.lstrip()
+                    fixed_lines.append(f"{target_indent}{content}")
+                    continue
+            
+            fixed_lines.append(current_line)
+        
+        text = "\n".join(fixed_lines)
+        if text.strip() != original.strip() and "SYNTAX_REPAIRED" not in fixes:
+            fixes.append("SYNTAX_REPAIRED")
             
         return text, fixes
 
@@ -203,7 +218,6 @@ class Healer:
             label_map = {}
             for doc_str in raw_docs:
                 if not doc_str.strip(): continue
-                # Apply RegexShield even in Pass 1 to ensure parsing works
                 clean_d, _ = RegexShield.sanitize(doc_str)
                 try:
                     temp_parsed = self.yaml.load(clean_d)
@@ -274,7 +288,7 @@ class Healer:
                         healed_parts.append(d.strip())
 
                 except Exception:
-                    # If YAML parsing still fails, we return the Regex-cleaned version
+                    # If YAML parsing still fails, we check if RegexShield made progress
                     self.detected_codes.add(f"SYNTAX_ERROR:{current_line_offset}")
                     healed_parts.append(d.strip())              
 
@@ -284,9 +298,14 @@ class Healer:
             
             if return_content: return (healed_final, self.detected_codes)
             
+            # CRITICAL LOGIC FIX: Check if we actually improved the file
             changed = original_content.strip() != healed_final.strip()
+            
+            # If we detected a SYNTAX_ERROR but changed is False, it means we FAILED to fix it.
+            # We should only return True (changed) if the RegexShield actually sanitised the content.
             if changed and not dry_run:
                 with open(file_path, 'w') as f: f.write(healed_final)
+                
             return (changed, self.detected_codes)
 
         except Exception:
