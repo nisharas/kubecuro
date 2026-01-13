@@ -19,9 +19,10 @@ jobs:
           python -m pip install --upgrade pip
           # Install from your local requirements first
           pip install -r requirements.txt
+          pip install ruamel.yaml
           # Force specific rich version if needed, then install package
           pip install --upgrade rich==14.2.0
-          pip install -e .[dev]
+          pip install -e .
           pip install pytest
 
       - name: Environment Truth-Check
